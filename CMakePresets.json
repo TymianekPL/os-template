@@ -1,0 +1,294 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "debug",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-base",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "linux-base",
+            "hidden": true,
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "msvc",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "cl"
+            }
+        },
+        {
+            "name": "clang",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "gcc",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "g++"
+            }
+        },
+        {
+            "name": "gcc-mingw",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "x86_64-w64-mingw32-g++"
+            }
+        },
+        {
+            "name": "windows-x64-msvc-debug",
+            "displayName": "Windows x64 MSVC Debug",
+            "description": "Build UEFI application for x64 Windows (MSVC, Debug)",
+            "inherits": ["base", "windows-base", "msvc", "debug"]
+        },
+        {
+            "name": "windows-x64-msvc-release",
+            "displayName": "Windows x64 MSVC Release",
+            "description": "Build UEFI application for x64 Windows (MSVC, Release)",
+            "inherits": ["base", "windows-base", "msvc", "release"]
+        },
+        {
+            "name": "windows-x64-clang-debug",
+            "displayName": "Windows x64 Clang Debug",
+            "description": "Build UEFI application for x64 Windows (Clang, Debug)",
+            "inherits": ["base", "windows-base", "clang", "debug"]
+        },
+        {
+            "name": "windows-x64-clang-release",
+            "displayName": "Windows x64 Clang Release",
+            "description": "Build UEFI application for x64 Windows (Clang, Release)",
+            "inherits": ["base", "windows-base", "clang", "release"]
+        },
+        {
+            "name": "windows-x64-gcc-debug",
+            "displayName": "Windows x64 GCC Debug",
+            "description": "Build UEFI application for x64 Windows (GCC, Debug)",
+            "inherits": ["base", "windows-base", "gcc", "debug"]
+        },
+        {
+            "name": "windows-x64-gcc-release",
+            "displayName": "Windows x64 GCC Release",
+            "description": "Build UEFI application for x64 Windows (GCC, Release)",
+            "inherits": ["base", "windows-base", "gcc", "release"]
+        },
+        {
+            "name": "linux-x64-gcc-debug",
+            "displayName": "Linux x64 GCC Debug",
+            "description": "Build UEFI application for x64 Linux (GCC cross-compile, Debug)",
+            "inherits": ["base", "linux-base", "gcc-mingw", "debug"]
+        },
+        {
+            "name": "linux-x64-gcc-release",
+            "displayName": "Linux x64 GCC Release",
+            "description": "Build UEFI application for x64 Linux (GCC cross-compile, Release)",
+            "inherits": ["base", "linux-base", "gcc-mingw", "release"]
+        },
+        {
+            "name": "linux-x64-clang-debug",
+            "displayName": "Linux x64 Clang Debug",
+            "description": "Build UEFI application for x64 Linux (Clang, Debug)",
+            "inherits": ["base", "linux-base", "clang", "debug"]
+        },
+        {
+            "name": "linux-x64-clang-release",
+            "displayName": "Linux x64 Clang Release",
+            "description": "Build UEFI application for x64 Linux (Clang, Release)",
+            "inherits": ["base", "linux-base", "clang", "release"]
+        },
+        {
+            "name": "windows-x86-msvc-debug",
+            "displayName": "Windows x86 MSVC Debug",
+            "description": "Build UEFI application for x86-32 Windows (MSVC, Debug)",
+            "inherits": ["base", "windows-base", "msvc", "debug"],
+            "cacheVariables": {
+                "CMAKE_SIZEOF_VOID_P": "4"
+            },
+            "architecture": {
+                "value": "Win32",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "windows-x86-msvc-release",
+            "displayName": "Windows x86 MSVC Release",
+            "description": "Build UEFI application for x86-32 Windows (MSVC, Release)",
+            "inherits": ["base", "windows-base", "msvc", "release"],
+            "cacheVariables": {
+                "CMAKE_SIZEOF_VOID_P": "4"
+            },
+            "architecture": {
+                "value": "Win32",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "windows-x86-clang-debug",
+            "displayName": "Windows x86 Clang Debug",
+            "description": "Build UEFI application for x86-32 Windows (Clang, Debug)",
+            "inherits": ["base", "windows-base", "clang", "debug"],
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS": "-m32 -target i686-pc-windows-msvc",
+                "CMAKE_SIZEOF_VOID_P": "4"
+            }
+        },
+        {
+            "name": "windows-x86-clang-release",
+            "displayName": "Windows x86 Clang Release",
+            "description": "Build UEFI application for x86-32 Windows (Clang, Release)",
+            "inherits": ["base", "windows-base", "clang", "release"],
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS": "-m32 -target i686-pc-windows-msvc",
+                "CMAKE_SIZEOF_VOID_P": "4"
+            }
+        },
+        {
+            "name": "windows-arm64-msvc-debug",
+            "displayName": "Windows ARM64 MSVC Debug",
+            "description": "Build UEFI application for ARM64 Windows (MSVC, Debug)",
+            "inherits": ["base", "windows-base", "msvc", "debug"],
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "ARM64"
+            }
+        },
+        {
+            "name": "windows-arm64-msvc-release",
+            "displayName": "Windows ARM64 MSVC Release",
+            "description": "Build UEFI application for ARM64 Windows (MSVC, Release)",
+            "inherits": ["base", "windows-base", "msvc", "release"],
+            "cacheVariables": {
+                "CMAKE_SYSTEM_PROCESSOR": "ARM64"
+            }
+        },
+        {
+            "name": "windows-arm64-clang-debug",
+            "displayName": "Windows ARM64 Clang Debug",
+            "description": "Build UEFI application for ARM64 Windows (Clang, Debug)",
+            "inherits": ["base", "windows-base", "clang", "debug"],
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS": "-target aarch64-pc-windows-msvc",
+                "CMAKE_SYSTEM_PROCESSOR": "ARM64"
+            }
+        },
+        {
+            "name": "windows-arm64-clang-release",
+            "displayName": "Windows ARM64 Clang Release",
+            "description": "Build UEFI application for ARM64 Windows (Clang, Release)",
+            "inherits": ["base", "windows-base", "clang", "release"],
+            "cacheVariables": {
+                "CMAKE_CXX_FLAGS": "-target aarch64-pc-windows-msvc",
+                "CMAKE_SYSTEM_PROCESSOR": "ARM64"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "windows-x64-msvc-debug",
+            "configurePreset": "windows-x64-msvc-debug"
+        },
+        {
+            "name": "windows-x64-msvc-release",
+            "configurePreset": "windows-x64-msvc-release"
+        },
+        {
+            "name": "windows-x64-clang-debug",
+            "configurePreset": "windows-x64-clang-debug"
+        },
+        {
+            "name": "windows-x64-clang-release",
+            "configurePreset": "windows-x64-clang-release"
+        },
+        {
+            "name": "windows-x64-gcc-debug",
+            "configurePreset": "windows-x64-gcc-debug"
+        },
+        {
+            "name": "windows-x64-gcc-release",
+            "configurePreset": "windows-x64-gcc-release"
+        },
+        {
+            "name": "linux-x64-gcc-debug",
+            "configurePreset": "linux-x64-gcc-debug"
+        },
+        {
+            "name": "linux-x64-gcc-release",
+            "configurePreset": "linux-x64-gcc-release"
+        },
+        {
+            "name": "linux-x64-clang-debug",
+            "configurePreset": "linux-x64-clang-debug"
+        },
+        {
+            "name": "linux-x64-clang-release",
+            "configurePreset": "linux-x64-clang-release"
+        },
+        {
+            "name": "windows-x86-msvc-debug",
+            "configurePreset": "windows-x86-msvc-debug"
+        },
+        {
+            "name": "windows-x86-msvc-release",
+            "configurePreset": "windows-x86-msvc-release"
+        },
+        {
+            "name": "windows-x86-clang-debug",
+            "configurePreset": "windows-x86-clang-debug"
+        },
+        {
+            "name": "windows-x86-clang-release",
+            "configurePreset": "windows-x86-clang-release"
+        },
+        {
+            "name": "windows-arm64-msvc-debug",
+            "configurePreset": "windows-arm64-msvc-debug"
+        },
+        {
+            "name": "windows-arm64-msvc-release",
+            "configurePreset": "windows-arm64-msvc-release"
+        },
+        {
+            "name": "windows-arm64-clang-debug",
+            "configurePreset": "windows-arm64-clang-debug"
+        },
+        {
+            "name": "windows-arm64-clang-release",
+            "configurePreset": "windows-arm64-clang-release"
+        }
+    ]
+}
