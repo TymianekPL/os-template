@@ -1,4 +1,4 @@
-     # Simple operating system template
+# Simple operating system template
 
 ## Recommended setup
 
