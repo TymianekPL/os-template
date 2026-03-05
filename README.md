@@ -4,7 +4,7 @@
 
 ## 1. Clone the repository
 ```bash
-$ git clone github.com/TymianekPL/os-template.git
+$ git clone https://github.com/TymianekPL/os-template.git
 ```
 
 ### Windows/MSVC
