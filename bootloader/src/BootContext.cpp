@@ -333,10 +333,6 @@ namespace bootloader
                     return false;
                }
           }
-          memory::paging::MapPage(
-              this->_pageTableRoot,
-              memory::PageMapping{.virtualAddress = 0xffff'ffff'a0000'000, .physicalAddress = 0x1000, .size = 0x2000},
-              AllocatePageTableMemory);
 
           this->_lastStatus = EFI_SUCCESS;
           return true;
