@@ -34,20 +34,15 @@ if NOT %error% == 0 (
 )
 
 setlocal enabledelayedexpansion
-if not exist "%BUILD_DIR%\BOOTX64.efi" (
-     echo ERROR: BOOTX64.efi not found in build directory
-     echo.
+
+echo [1/4] Copying files...
+call "%~dp0copy-files.bat" "%BUILD_DIR%" "BOOTX64"
+if %errorlevel% neq 0 (
      pause
      exit /b 1
 )
 
-echo [1/4] Creating EFI boot directory structure...
-if not exist "%BUILD_DIR%\guest_root\EFI\BOOT" mkdir "%BUILD_DIR%\guest_root\EFI\BOOT"
-
-echo [2/4] Copying BOOTX64.efi to EFI\BOOT\BOOTX64.EFI...
-copy /Y "%BUILD_DIR%\BOOTX64.efi" "%BUILD_DIR%\guest_root\EFI\BOOT\BOOTX64.EFI" >nul
-
-echo [3/4] Checking for QEMU installation...
+echo [2/4] Checking for QEMU installation...
 where qemu-system-x86_64.exe >nul 2>&1
 if %errorlevel% neq 0 (
      echo qemu-system-x86_64 not found
@@ -55,7 +50,7 @@ if %errorlevel% neq 0 (
      exit /b 1
 )
 
-echo [4/4] Locating OVMF firmware...
+echo [3/4] Locating OVMF firmware...
 set "OVMF_PATH="
 
 if exist "C:\Program Files\qemu\share\edk2-x86_64-code.fd" (
@@ -83,13 +78,14 @@ if "%OVMF_PATH%"=="" (
 
 echo OVMF: !OVMF_PATH!
 
+echo [4/4] Starting QEMU...
 qemu-system-x86_64.exe ^
      -drive if=pflash,format=raw,readonly=on,file="!OVMF_PATH!" ^
      -drive file=fat:rw:%BUILD_DIR%\guest_root,format=raw,media=disk ^
      -m 512M ^
      -net none ^
      -vga std ^
-     -serial stdio
+     -serial stdio -M q35 -d int -D qemu.txt -no-reboot -no-shutdown
 
 echo.
 echo QEMU session ended.

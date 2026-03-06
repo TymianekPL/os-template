@@ -34,20 +34,15 @@ if NOT %error% == 0 (
 )
 
 setlocal enabledelayedexpansion
-if not exist "%BUILD_DIR%\BOOTAA64.efi" (
-     echo ERROR: BOOTAA64.efi not found in build directory
-     echo.
+
+echo [1/4] Copying files...
+call "%~dp0copy-files.bat" "%BUILD_DIR%" "BOOTAA64"
+if %errorlevel% neq 0 (
      pause
      exit /b 1
 )
 
-echo [1/4] Creating EFI boot directory structure...
-if not exist "%BUILD_DIR%\guest_root\EFI\BOOT" mkdir "%BUILD_DIR%\guest_root\EFI\BOOT"
-
-echo [2/4] Copying BOOTAA64.efi to EFI\BOOT\BOOTAA64.EFI...
-copy /Y "%BUILD_DIR%\BOOTAA64.efi" "%BUILD_DIR%\guest_root\EFI\BOOT\BOOTAA64.EFI" >nul
-
-echo [3/4] Checking for QEMU installation...
+echo [2/4] Checking for QEMU installation...
 where qemu-system-aarch64.exe >nul 2>&1
 if %errorlevel% neq 0 (
      echo qemu-system-aarch64 not found
@@ -55,7 +50,7 @@ if %errorlevel% neq 0 (
      exit /b 1
 )
 
-echo [4/4] Locating AAVMF firmware...
+echo [3/4] Locating AAVMF firmware...
 set "AAVMF_PATH="
 set "AAVMF_VARS="
 
@@ -84,6 +79,7 @@ if "%AAVMF_PATH%"=="" (
 
 echo AAVMF: !AAVMF_PATH!
 
+echo [4/4] Starting QEMU...
 qemu-system-aarch64.exe ^
      -M virt ^
      -cpu cortex-a57 ^
@@ -92,7 +88,8 @@ qemu-system-aarch64.exe ^
      -m 512M ^
      -net none ^
      -device ramfb ^
-     -serial stdio
+     -serial stdio -d mmu,int -D qemu_arm.txt -no-reboot -no-shutdown ^
+     -monitor tcp:127.0.0.1:4445,server,nowait
 
 echo.
 echo QEMU session ended.

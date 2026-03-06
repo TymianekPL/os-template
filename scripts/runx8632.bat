@@ -34,20 +34,15 @@ if NOT %error% == 0 (
 )
 
 setlocal enabledelayedexpansion
-if not exist "%BUILD_DIR%\BOOTIA32.efi" (
-     echo ERROR: BOOTIA32.efi not found in build directory
-     echo.
+
+echo [1/4] Copying files...
+call "%~dp0copy-files.bat" "%BUILD_DIR%" "BOOTIA32"
+if %errorlevel% neq 0 (
      pause
      exit /b 1
 )
 
-echo [1/4] Creating EFI boot directory structure...
-if not exist "%BUILD_DIR%\guest_root\EFI\BOOT" mkdir "%BUILD_DIR%\guest_root\EFI\BOOT"
-
-echo [2/4] Copying BOOTIA32.efi to EFI\BOOT\BOOTIA32.EFI...
-copy /Y "%BUILD_DIR%\BOOTIA32.efi" "%BUILD_DIR%\guest_root\EFI\BOOT\BOOTIA32.EFI" >nul
-
-echo [3/4] Checking for QEMU installation...
+echo [2/4] Checking for QEMU installation...
 where qemu-system-i386.exe >nul 2>&1
 if %errorlevel% neq 0 (
      echo qemu-system-i386 not found
@@ -55,7 +50,7 @@ if %errorlevel% neq 0 (
      exit /b 1
 )
 
-echo [4/4] Locating OVMF firmware...
+echo [3/4] Locating OVMF firmware...
 set "OVMF_PATH="
 
 if exist "C:\Program Files\qemu\share\edk2-i386-code.fd" (
@@ -83,13 +78,14 @@ if "%OVMF_PATH%"=="" (
 
 echo OVMF: !OVMF_PATH!
 
+echo [4/4] Starting QEMU...
 qemu-system-i386.exe ^
      -drive if=pflash,format=raw,readonly=on,file="!OVMF_PATH!" ^
      -drive file=fat:rw:%BUILD_DIR%\guest_root,format=raw,media=disk ^
      -m 512M ^
      -net none ^
      -vga std ^
-     -serial stdio
+     -serial stdio -cpu qemu32,+sse,+sse2 -boot d -d int -D qemu.txt -no-reboot -no-shutdown
 
 echo.
 echo QEMU session ended.

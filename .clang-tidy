@@ -8,7 +8,6 @@ Checks: >
   portability-*,
   clang-analyzer-*,
   -modernize-use-trailing-return-type,
-  -modernize-redundant-void-arg,
   -readability-braces-around-statements,
   -cppcoreguidelines-special-member-functions,
   -readability-redundant-member-init,
