@@ -1,5 +1,7 @@
 #include "vallocator.h"
+#include <utils/memory.h>
 #include <algorithm>
+#include "utils/kdbg.h"
 
 namespace memory
 {
@@ -13,7 +15,11 @@ namespace memory
      bool VADNodeAllocator::AllocateNodePage()
      {
           std::uintptr_t physPage = physicalAllocator.AllocatePage(PFNUse::KernelHeap);
-          if (physPage == ~0uz) return false;
+          if (physPage == ~0uz)
+          {
+               debugging::DbgWrite(u8"[VADNodeAllocator::AllocateNodePage] physicalAllocator.AllocatePage == ~0\r\n");
+               return false;
+          }
 
           auto* page = reinterpret_cast<struct FreeNode*>(physPage + physicalAllocator.physToVirtOffset);
 
@@ -49,7 +55,11 @@ namespace memory
 
      void VADNodeAllocator::FreeNode(VADNode* node)
      {
-          if (!node) return;
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[FreeNode] node == nullptr\r\n");
+               return;
+          }
 
           node->~VADNode();
 
@@ -62,8 +72,11 @@ namespace memory
 
      void VirtualMemoryAllocator::UpdateMaxEnd(VADNode* node)
      {
-          if (!node) return;
-
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[UpdateMaxEnd] node == nullptr\r\n");
+               return;
+          }
           node->maxEnd = node->EndAddress();
           if (node->left && node->left->maxEnd > node->maxEnd) node->maxEnd = node->left->maxEnd;
           if (node->right && node->right->maxEnd > node->maxEnd) node->maxEnd = node->right->maxEnd;
@@ -71,7 +84,7 @@ namespace memory
 
      void VirtualMemoryAllocator::UpdateMaxEndUpwards(VADNode* node)
      {
-          while (node)
+          while (node != nullptr)
           {
                UpdateMaxEnd(node);
                node = node->parent;
@@ -178,13 +191,23 @@ namespace memory
 
      bool VirtualMemoryAllocator::Insert(const VADEntry& entry)
      {
-          if (FindOverlap(entry.baseAddress, entry.size)) return false;
+          if (FindOverlap(entry.baseAddress, entry.size) != nullptr)
+          {
+               debugging::DbgWrite(u8"[VirtualMemoryAllocator::Insert] FindOverlap({}, {}) != nullptr\r\n",
+                                   reinterpret_cast<void*>(entry.baseAddress), entry.size);
+               return false;
+          }
 
           VADNode* z = _nodeAllocator.AllocateNode(entry);
-          if (z == nullptr) return false;
+          if (z == nullptr)
+          {
+               debugging::DbgWrite(
+                   u8"[VirtualMemoryAllocator::Insert] _nodeAllocator.AllocateNode(entry) == nullptr\r\n");
+               return false;
+          }
 
           VADNode* y = nullptr;
-          VADNode* x = _root;
+          VADNode* x = this->_root;
 
           while (x)
           {
@@ -222,6 +245,7 @@ namespace memory
                     current = current->right;
           }
 
+          debugging::DbgWrite(u8"[Search] {} not found\r\n", reinterpret_cast<void*>(baseAddress));
           return nullptr;
      }
 
@@ -255,6 +279,7 @@ namespace memory
                     current = current->right;
           }
 
+          debugging::DbgWrite(u8"[FindContaining] {} not found\r\n", reinterpret_cast<void*>(address));
           return nullptr;
      }
 
@@ -357,7 +382,32 @@ namespace memory
      bool VirtualMemoryAllocator::Remove(std::uintptr_t baseAddress)
      {
           VADNode* z = Search(baseAddress);
-          if (z == nullptr) return false;
+          if (z == nullptr)
+          {
+               debugging::DbgWrite(u8"[VirtualMemoryAllocator::Remove] Search(baseAddress) == nullptr\r\n");
+               return false;
+          }
+
+          if (z->entry.state == VADMemoryState::Reserved || z->entry.state == VADMemoryState::Committed)
+          {
+               if (this->_stats.totalReservedBytes.load(std::memory_order_relaxed) >= z->entry.size)
+                    this->_stats.totalReservedBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
+          }
+
+          if (z->entry.state == VADMemoryState::Committed)
+          {
+               if (this->_stats.totalCommittedBytes.load(std::memory_order_relaxed) >= z->entry.size)
+                    this->_stats.totalCommittedBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
+               if (this->_stats.commitCharge.load(std::memory_order_relaxed) >= z->entry.size)
+                    this->_stats.commitCharge.fetch_sub(z->entry.size, std::memory_order_relaxed);
+          }
+
+          if (z->entry.immediatePhysical && _stats.totalImmediateBytes.load(std::memory_order_relaxed) >= z->entry.size)
+          {
+               this->_stats.totalImmediateBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
+          }
+
+          this->_stats.releaseOperations.fetch_add(1, std::memory_order_relaxed);
 
           VADNode* y = z;
           VADNode* x = nullptr;
@@ -431,6 +481,13 @@ namespace memory
           return Insert(entry);
      }
 
+     bool VirtualMemoryAllocator::ReserveVirtualMemoryFixedAsCommitted(std::uintptr_t baseAddress, std::size_t size,
+                                                                       MemoryProtection protection, PFNUse use)
+     {
+          VADEntry entry(baseAddress, size, VADMemoryState::Committed, protection, use);
+          return Insert(entry);
+     }
+
      std::uintptr_t VirtualMemoryAllocator::FindFreeRegion(std::size_t size, std::uintptr_t hint)
      {
           std::uintptr_t searchAddress = hint > 0 ? hint : _searchStart;
@@ -473,10 +530,26 @@ namespace memory
                                                                  PFNUse use)
      {
           std::uintptr_t baseAddress = FindFreeRegion(size, 0);
-          if (baseAddress == 0) return 0;
+          if (baseAddress == 0)
+          {
+               _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+               return 0;
+          }
 
-          if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use)) return baseAddress;
+          if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use))
+          {
+               _stats.reserveOperations.fetch_add(1, std::memory_order_relaxed);
+               const std::size_t newReserved =
+                   _stats.totalReservedBytes.fetch_add(size, std::memory_order_relaxed) + size;
+               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order_relaxed);
+               while (newReserved > currentPeak && !_stats.peakReservedBytes.compare_exchange_weak(
+                                                       currentPeak, newReserved, std::memory_order_relaxed))
+               {
+               }
+               return baseAddress;
+          }
 
+          _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
           return 0;
      }
 
@@ -484,10 +557,318 @@ namespace memory
                                                                    MemoryProtection protection, PFNUse use)
      {
           std::uintptr_t baseAddress = FindFreeRegion(size, hint);
-          if (baseAddress == 0) return 0;
+          if (baseAddress == 0)
+          {
+               _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+               return 0;
+          }
 
-          if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use)) return baseAddress;
+          if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use))
+          {
+               _stats.reserveOperations.fetch_add(1, std::memory_order_relaxed);
+               const std::size_t newReserved =
+                   _stats.totalReservedBytes.fetch_add(size, std::memory_order_relaxed) + size;
+               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order_relaxed);
+               while (newReserved > currentPeak && !_stats.peakReservedBytes.compare_exchange_weak(
+                                                       currentPeak, newReserved, std::memory_order_relaxed))
+               {
+               }
+               return baseAddress;
+          }
 
+          _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
           return 0;
      }
+
+     bool VirtualMemoryAllocator::CommitMemoryRange(VADNode* node, std::uintptr_t baseAddress, std::size_t size,
+                                                    bool immediate)
+     {
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[CommitMemoryRange] node == nullptr\r\n");
+               return false;
+          }
+
+          if (baseAddress < node->entry.baseAddress || (baseAddress + size) > node->EndAddress()) return false;
+
+          if (node->entry.state != VADMemoryState::Reserved && node->entry.state != VADMemoryState::Committed)
+          {
+               debugging::DbgWrite(
+                   u8"[CommitMemoryRange] node->entry.state != VADMemoryState::Reserved && node->entry.state "
+                   u8"!= VADMemoryState::Committed\r\n");
+               return false;
+          }
+
+          if (immediate)
+          {
+               const std::size_t numPages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+               std::uintptr_t pageTable = _pageTableRoot != 0 ? _pageTableRoot : memory::paging::GetCurrentPageTable();
+
+               for (std::size_t i = 0; i < numPages; i++)
+               {
+                    std::uintptr_t physPage = physicalAllocator.AllocatePage(node->entry.use);
+                    if (physPage == ~0uz)
+                    {
+                         // TODO: Free previously allocated pages on failure
+                         this->_stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+                         debugging::DbgWrite(u8"[CommitMemoryRange] physicalAllocator.AllocatePage == ~0\r\n");
+                         return false;
+                    }
+
+                    memory::PageMapping mapping{};
+                    mapping.virtualAddress = baseAddress + (i * PAGE_SIZE);
+                    mapping.physicalAddress = physPage;
+                    mapping.size = PAGE_SIZE;
+                    mapping.writable = (static_cast<std::uint16_t>(node->entry.protection) &
+                                        static_cast<std::uint16_t>(MemoryProtection::ReadWrite)) != 0;
+                    mapping.userAccessible = true; // TODO: Determine from protection flags
+                    mapping.cacheDisable = (static_cast<std::uint16_t>(node->entry.protection) &
+                                            static_cast<std::uint16_t>(MemoryProtection::NoCache)) != 0;
+
+                    auto allocator = [](std::size_t size) -> void*
+                    {
+                         std::uintptr_t page = physicalAllocator.AllocatePage(PFNUse::PageTable);
+                         if (page == ~0uz) return nullptr;
+                         return reinterpret_cast<void*>(page + memory::virtualOffset);
+                    };
+
+                    if (!memory::paging::MapPage(pageTable, mapping, allocator))
+                    {
+                         physicalAllocator.ReleaseFreePage(physPage);
+                         this->_stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+                         debugging::DbgWrite(u8"[CommitMemoryRange] !memory::paging::MapPage\r\n");
+                         return false;
+                    }
+
+                    memory::paging::InvalidatePage(mapping.virtualAddress);
+               }
+
+               _stats.totalImmediateBytes.fetch_add(size, std::memory_order_relaxed);
+               node->entry.immediatePhysical = true;
+          }
+
+          node->entry.state = VADMemoryState::Committed;
+
+          const std::size_t newCommitted = _stats.totalCommittedBytes.fetch_add(size, std::memory_order_relaxed) + size;
+          _stats.commitCharge.fetch_add(size, std::memory_order_relaxed);
+          std::size_t currentPeak = _stats.peakCommittedBytes.load(std::memory_order_relaxed);
+          while (newCommitted > currentPeak &&
+                 !_stats.peakCommittedBytes.compare_exchange_weak(currentPeak, newCommitted, std::memory_order_relaxed))
+          {
+          }
+
+          _stats.commitOperations.fetch_add(1, std::memory_order_relaxed);
+          return true;
+     }
+
+     bool VirtualMemoryAllocator::SplitVADForDecommit(VADNode* node, std::uintptr_t decommitStart,
+                                                      std::size_t decommitSize)
+     {
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[SplitVADForDecommit] node == nullptr\r\n");
+               return false;
+          }
+
+          const std::uintptr_t nodeStart = node->entry.baseAddress;
+          const std::uintptr_t nodeEnd = node->EndAddress();
+          const std::uintptr_t decommitEnd = decommitStart + decommitSize;
+
+          if (decommitStart < nodeStart || decommitEnd > nodeEnd)
+          {
+               debugging::DbgWrite(u8"[SplitVADForDecommit] decommitStart < nodeStart || decommitEnd > nodeEnd\r\n");
+               return false;
+          }
+
+          if (node->entry.state != VADMemoryState::Committed)
+          {
+               debugging::DbgWrite(u8"[SplitVADForDecommit] node->entry.state != VADMemoryState::Committed\r\n");
+               return false;
+          }
+
+          if (node->entry.immediatePhysical)
+          {
+               const std::size_t numPages = (decommitSize + PAGE_SIZE - 1) / PAGE_SIZE;
+               std::uintptr_t pageTable = _pageTableRoot != 0 ? _pageTableRoot : memory::paging::GetCurrentPageTable();
+
+               for (std::size_t i = 0; i < numPages; i++)
+               {
+                    std::uintptr_t virtualAddr = decommitStart + (i * PAGE_SIZE);
+
+                    auto* pml4 = reinterpret_cast<std::uint64_t*>(pageTable);
+                    std::uint64_t pml4Index = (virtualAddr >> 39) & 0x1FF;
+                    std::uint64_t pdptIndex = (virtualAddr >> 30) & 0x1FF;
+                    std::uint64_t pdIndex = (virtualAddr >> 21) & 0x1FF;
+                    std::uint64_t ptIndex = (virtualAddr >> 12) & 0x1FF;
+
+                    if ((pml4[pml4Index] & 1) != 0)
+                    {
+                         auto* pdpt = reinterpret_cast<std::uint64_t*>((pml4[pml4Index] & ~0xFFFULL));
+                         if ((pdpt[pdptIndex] & 1) != 0)
+                         {
+                              auto* pd = reinterpret_cast<std::uint64_t*>((pdpt[pdptIndex] & ~0xFFFULL));
+                              if ((pd[pdIndex] & 1) != 0 && (pd[pdIndex] & (1ULL << 7)) == 0)
+                              {
+                                   auto* pt = reinterpret_cast<std::uint64_t*>((pd[pdIndex] & ~0xFFFULL));
+                                   if ((pt[ptIndex] & 1) != 0) // Present
+                                   {
+                                        std::uintptr_t physAddr = pt[ptIndex] & ~0xFFFULL;
+
+                                        pt[ptIndex] = 0;
+                                        physicalAllocator.ReleaseFreePage(physAddr);
+                                        memory::paging::InvalidatePage(virtualAddr);
+                                   }
+                              }
+                         }
+                    }
+               }
+               this->_stats.totalImmediateBytes.fetch_sub(decommitSize, std::memory_order_relaxed);
+          }
+
+          if (this->_stats.totalCommittedBytes.load(std::memory_order_relaxed) >= decommitSize)
+               this->_stats.totalCommittedBytes.fetch_sub(decommitSize, std::memory_order_relaxed);
+          if (this->_stats.commitCharge.load(std::memory_order_relaxed) >= decommitSize)
+               this->_stats.commitCharge.fetch_sub(decommitSize, std::memory_order_relaxed);
+
+          this->_stats.decommitOperations.fetch_add(1, std::memory_order_relaxed);
+
+          if (decommitStart == nodeStart && decommitEnd == nodeEnd)
+          {
+               node->entry.state = VADMemoryState::Reserved;
+               node->entry.immediatePhysical = false;
+               return true;
+          }
+
+          if (decommitStart == nodeStart)
+          {
+               const std::uintptr_t newStart = decommitEnd;
+               const std::size_t newSize = nodeEnd - newStart;
+
+               VADEntry decommittedEntry(nodeStart, decommitSize, VADMemoryState::Reserved, node->entry.protection,
+                                         node->entry.use, false);
+
+               node->entry.baseAddress = newStart;
+               node->entry.size = newSize;
+
+               if (!Insert(decommittedEntry))
+               {
+                    debugging::DbgWrite(u8"[SplitVADForDecommit:1] Insert failed {}\r\n", decommittedEntry);
+                    return false;
+               }
+
+               return true;
+          }
+
+          if (decommitEnd == nodeEnd)
+          {
+               node->entry.size = decommitStart - nodeStart;
+               UpdateMaxEndUpwards(node);
+
+               VADEntry decommittedEntry(decommitStart, decommitSize, VADMemoryState::Reserved, node->entry.protection,
+                                         node->entry.use, false);
+
+               return Insert(decommittedEntry);
+          }
+
+          const std::size_t frontSize = decommitStart - nodeStart;
+          const std::size_t backSize = nodeEnd - decommitEnd;
+
+          node->entry.size = frontSize;
+          UpdateMaxEndUpwards(node);
+
+          VADEntry decommittedEntry(decommitStart, decommitSize, VADMemoryState::Reserved, node->entry.protection,
+                                    node->entry.use, false);
+
+          if (!Insert(decommittedEntry))
+          {
+               debugging::DbgWrite(u8"[SplitVADForDecommit:2] !Insert({})\r\n", decommittedEntry);
+               return false;
+          }
+
+          VADEntry backEntry(decommitEnd, backSize, VADMemoryState::Committed, node->entry.protection, node->entry.use,
+                             node->entry.immediatePhysical);
+
+          if (!Insert(backEntry))
+          {
+               Remove(decommitStart);
+               debugging::DbgWrite(u8"[SplitVADForDecommit] !Insert(backEntry)\r\n");
+               return false;
+          }
+
+          node->entry.size = frontSize;
+          UpdateMaxEndUpwards(node);
+          return true;
+     }
+
+     bool VirtualMemoryAllocator::DecommitMemoryRange(VADNode* node, std::uintptr_t baseAddress, std::size_t size)
+     {
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[DecommitMemoryRange] node == nullptr\r\n");
+               return false;
+          }
+
+          if (baseAddress < node->entry.baseAddress || (baseAddress + size) > node->EndAddress())
+          {
+               debugging::DbgWrite(u8"[DecommitMemoryRange] baseAddress < node->entry.baseAddress || "
+                                   u8"(baseAddress + size) > node->EndAddress()\r\n");
+               return false;
+          }
+
+          if (node->entry.state != VADMemoryState::Committed)
+          {
+               debugging::DbgWrite(u8"[DecommitMemoryRange] node->entry.state != VADMemoryState::Committed\r\n");
+               return false;
+          }
+
+          return SplitVADForDecommit(node, baseAddress, size);
+     }
+
+     bool VirtualMemoryAllocator::CommitMemory(std::uintptr_t baseAddress, std::size_t size, bool immediate)
+     {
+          if (size == 0)
+          {
+               debugging::DbgWrite(u8"[CommitMemory] size == 0\r\n");
+               return false;
+          }
+
+          VADNode* node = FindContaining(baseAddress);
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[CommitMemory] FindContaining(baseAddress) == nullptr\r\n");
+               return false;
+          }
+
+          return CommitMemoryRange(node, baseAddress, size, immediate);
+     }
+
+     bool VirtualMemoryAllocator::DecommitMemory(std::uintptr_t baseAddress, std::size_t size)
+     {
+          if (size == 0)
+          {
+               debugging::DbgWrite(u8"[DecommitMemory] size == 0\r\n");
+               return false;
+          }
+
+          VADNode* node = FindContaining(baseAddress);
+          if (node == nullptr)
+          {
+               debugging::DbgWrite(u8"[DecommitMemory] FindContaining(baseAddress) == nullptr\r\n");
+               return false;
+          }
+
+          return DecommitMemoryRange(node, baseAddress, size);
+     }
 } // namespace memory
+
+template <> struct debugging::SerialFormatter<memory::VADEntry>
+{
+     static void Write(const memory::VADEntry& entry)
+     {
+          debugging::SerialFormatter<char8_t[sizeof(u8"VADEntry{ .baseAddress = ")]>::Write( // NOLINT
+              u8"VADEntry{ .baseAddress = ");
+          debugging::SerialFormatter<const volatile void*>::Write(reinterpret_cast<void*>(entry.baseAddress));
+          debugging::SerialFormatter<char8_t[sizeof(u8"}")]>::Write(u8"}"); // NOLINT
+     }
+};

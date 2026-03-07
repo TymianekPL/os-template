@@ -5,6 +5,10 @@
 #include <arm64intr.h>
 #include <intrin.h>
 #endif
+namespace memory
+{
+     std::uintptr_t virtualOffset{};
+}
 
 namespace memory::paging
 {
@@ -41,7 +45,7 @@ namespace memory::paging
 
      bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
      {
-          auto* pml4 = reinterpret_cast<X64PageEntry*>(pageTableRoot);
+          auto* pml4 = reinterpret_cast<X64PageEntry*>(pageTableRoot + virtualOffset);
 
           for (std::uintptr_t offset = 0; offset < mapping.size; offset += 0x1000)
           {
@@ -59,13 +63,13 @@ namespace memory::paging
                     if (!pdpt) return false;
                     for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pdpt)[i] = 0; }
 
-                    pml4[pml4Index].physicalAddress = reinterpret_cast<std::uintptr_t>(pdpt) >> 12;
+                    pml4[pml4Index].physicalAddress = (reinterpret_cast<std::uintptr_t>(pdpt) - virtualOffset) >> 12;
                     pml4[pml4Index].present = 1;
                     pml4[pml4Index].writable = 1;
                }
 
-               auto* pdpt =
-                   reinterpret_cast<X64PageEntry*>(static_cast<std::uintptr_t>(pml4[pml4Index].physicalAddress) << 12);
+               auto* pdpt = reinterpret_cast<X64PageEntry*>(
+                   virtualOffset + (static_cast<std::uintptr_t>(pml4[pml4Index].physicalAddress) << 12));
 
                if (!pdpt[pdptIndex].present)
                {
@@ -73,13 +77,13 @@ namespace memory::paging
                     if (!pd) return false;
                     for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pd)[i] = 0; }
 
-                    pdpt[pdptIndex].physicalAddress = reinterpret_cast<std::uintptr_t>(pd) >> 12;
+                    pdpt[pdptIndex].physicalAddress = (reinterpret_cast<std::uintptr_t>(pd) - virtualOffset) >> 12;
                     pdpt[pdptIndex].present = 1;
                     pdpt[pdptIndex].writable = 1;
                }
 
-               auto* pd =
-                   reinterpret_cast<X64PageEntry*>(static_cast<std::uintptr_t>(pdpt[pdptIndex].physicalAddress) << 12);
+               auto* pd = reinterpret_cast<X64PageEntry*>(
+                   virtualOffset + (static_cast<std::uintptr_t>(pdpt[pdptIndex].physicalAddress) << 12));
 
                if (!pd[pdIndex].present || pd[pdIndex].largePage)
                {
@@ -87,14 +91,14 @@ namespace memory::paging
                     if (!pt) return false;
                     for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pt)[i] = 0; }
 
-                    pd[pdIndex].physicalAddress = reinterpret_cast<std::uintptr_t>(pt) >> 12;
+                    pd[pdIndex].physicalAddress = (reinterpret_cast<std::uintptr_t>(pt) - virtualOffset) >> 12;
                     pd[pdIndex].present = 1;
                     pd[pdIndex].writable = 1;
                     pd[pdIndex].largePage = 0;
                }
 
-               auto* pt =
-                   reinterpret_cast<X64PageEntry*>(static_cast<std::uintptr_t>(pd[pdIndex].physicalAddress) << 12);
+               auto* pt = reinterpret_cast<X64PageEntry*>(
+                   virtualOffset + (static_cast<std::uintptr_t>(pd[pdIndex].physicalAddress) << 12));
 
                pt[ptIndex].physicalAddress = pAddr >> 12;
                pt[ptIndex].present = 1;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include "pallocator.h"
@@ -10,8 +11,33 @@ namespace memory
      {
           Free,
           Reserved,
+          Committed,
           PagedOut,
      };
+
+     enum struct AllocationFlags : std::uint8_t
+     {
+          None = 0,
+          Reserve = 1 << 0,
+          Commit = 1 << 1,
+          Reset = 1 << 2,
+          ImmediatePhysical = 1 << 3,
+          Release = 1 << 4,
+          Decommit = 1 << 5,
+     };
+
+     inline AllocationFlags operator|(AllocationFlags a, AllocationFlags b)
+     {
+          return static_cast<AllocationFlags>(static_cast<std::uint32_t>(a) | static_cast<std::uint32_t>(b));
+     }
+
+     inline AllocationFlags operator&(AllocationFlags a, AllocationFlags b)
+     {
+          return static_cast<AllocationFlags>(static_cast<std::uint32_t>(a) & static_cast<std::uint32_t>(b));
+     }
+
+     inline bool operator!(AllocationFlags a) { return static_cast<std::uint32_t>(a) == 0; }
+
      enum struct MemoryProtection : std::uint16_t
      {
           NoAccess = 0,
@@ -36,10 +62,12 @@ namespace memory
           PFNUse use;
           std::uintptr_t baseAddress;
           std::size_t size;
+          bool immediatePhysical;
 
           explicit VADEntry(std::uintptr_t baseAddress, std::size_t size, VADMemoryState state,
-                            MemoryProtection protection, PFNUse use)
-              : baseAddress(baseAddress), size(size), state(state), protection(protection), use(use)
+                            MemoryProtection protection, PFNUse use, bool immediatePhysical = false)
+              : baseAddress(baseAddress), size(size), state(state), protection(protection), use(use),
+                immediatePhysical(immediatePhysical)
           {
           }
      };
@@ -84,12 +112,29 @@ namespace memory
           [[nodiscard]] std::size_t GetNodesInUse() const { return _nodesAllocated - _nodesFreed; }
      };
 
+     struct VirtualMemoryStatistics
+     {
+          std::atomic<std::size_t> totalReservedBytes{};
+          std::atomic<std::size_t> totalCommittedBytes{};
+          std::atomic<std::size_t> totalImmediateBytes{};
+          std::atomic<std::size_t> peakReservedBytes{};
+          std::atomic<std::size_t> peakCommittedBytes{};
+          std::atomic<std::size_t> commitCharge{};
+          std::atomic<std::size_t> reserveOperations{};
+          std::atomic<std::size_t> commitOperations{};
+          std::atomic<std::size_t> decommitOperations{};
+          std::atomic<std::size_t> releaseOperations{};
+          std::atomic<std::size_t> failedAllocations{};
+     };
+
      struct VirtualMemoryAllocator
      {
      private:
           VADNode* _root{nullptr};
           std::uintptr_t _searchStart{0x10000};
           VADNodeAllocator _nodeAllocator;
+          VirtualMemoryStatistics _stats{};
+          std::uintptr_t _pageTableRoot{0};
 
           void RotateLeft(VADNode* x);
           void RotateRight(VADNode* y);
@@ -100,6 +145,11 @@ namespace memory
           void UpdateMaxEnd(VADNode* node);
           void UpdateMaxEndUpwards(VADNode* node);
           std::uintptr_t FindFreeRegion(std::size_t size, std::uintptr_t hint = 0);
+
+          bool CommitMemoryRange(VADNode* node, std::uintptr_t baseAddress, std::size_t size, bool immediate);
+          bool DecommitMemoryRange(VADNode* node, std::uintptr_t baseAddress, std::size_t size);
+          bool SplitVADForDecommit(VADNode* node, std::uintptr_t decommitStart, std::size_t decommitSize);
+          void UpdateStatistics();
 
      public:
           VirtualMemoryAllocator() = default;
@@ -117,6 +167,12 @@ namespace memory
           bool ReserveVirtualMemoryFixed(std::uintptr_t baseAddress, std::size_t size, MemoryProtection protection,
                                          PFNUse use);
 
+          bool ReserveVirtualMemoryFixedAsCommitted(std::uintptr_t baseAddress, std::size_t size,
+                                                    MemoryProtection protection, PFNUse use);
+
+          bool CommitMemory(std::uintptr_t baseAddress, std::size_t size, bool immediate);
+          bool DecommitMemory(std::uintptr_t baseAddress, std::size_t size);
+
           [[nodiscard]] std::uintptr_t GetSearchStart() const { return _searchStart; }
 
           VADNode* FindContaining(std::uintptr_t address);
@@ -124,6 +180,10 @@ namespace memory
 
           [[nodiscard]] VADNode* GetRoot() const { return _root; }
           [[nodiscard]] const VADNodeAllocator& GetNodeAllocator() const { return _nodeAllocator; }
+          [[nodiscard]] const VirtualMemoryStatistics& GetStatistics() const { return _stats; }
+
+          void SetPageTableRoot(std::uintptr_t pageTableRoot) { _pageTableRoot = pageTableRoot; }
+          [[nodiscard]] std::uintptr_t GetPageTableRoot() const { return _pageTableRoot; }
      };
 
 } // namespace memory

@@ -50,8 +50,15 @@ namespace kernel
                                          memory::PFNUse use);
           bool ReserveMemoryFixed(std::uintptr_t baseAddress, std::size_t size, memory::MemoryProtection protection,
                                   memory::PFNUse use);
+          bool ReserveMemoryFixedAsCommitted(std::uintptr_t baseAddress, std::size_t size,
+                                             memory::MemoryProtection protection, memory::PFNUse use);
+
           bool FreeMemory(std::uintptr_t baseAddress);
           memory::VADNode* QueryAddress(std::uintptr_t address);
+
+          void* AllocateVirtualMemory(void* address, std::size_t size, memory::AllocationFlags flags,
+                                      memory::MemoryProtection protection);
+          bool ReleaseVirtualMemory(void* address, std::size_t size, memory::AllocationFlags flags);
 
           void SetState(ProcessState state);
           [[nodiscard]] ProcessState GetState() const { return _state; }
