@@ -47,105 +47,99 @@ constexpr std::uint32_t GetColourForPFNUse(memory::PFNUse use)
      case memory::PFNUse::PTE: return 0xf1c40f;            // Yellow
      case memory::PFNUse::Shareable: return 0x27ae60;      // Green
      case memory::PFNUse::PageTable: return 0x2ecc71;      // Light green
-     case memory::PFNUse::FSCache: return 0x95a5a6;        // Light grey
+     case memory::PFNUse::FSCache: return 0x95a5a6;        // Light gray
      default: return 0x000000;                             // Black
      }
 }
 
-constexpr std::uint32_t ModifyColourByRegion(std::uint32_t baseColour, memory::PFNRegion region)
+constexpr std::uint32_t GetColourForPFNRegion(memory::PFNRegion use)
 {
-     std::uint32_t r = (baseColour >> 16) & 0xFF;
-     std::uint32_t g = (baseColour >> 8) & 0xFF;
-     std::uint32_t b = baseColour & 0xFF;
-
-     switch (region)
+     switch (use)
      {
-     case memory::PFNRegion::Active:
-          // Full brightness
-          break;
-     case memory::PFNRegion::Free:
-          // Slightly dim
-          r = (r * 7) / 10;
-          g = (g * 7) / 10;
-          b = (b * 7) / 10;
-          break;
-     case memory::PFNRegion::Zero:
-          // Very bright (white tint)
-          r = (r + 255) / 2;
-          g = (g + 255) / 2;
-          b = (b + 255) / 2;
-          break;
-     case memory::PFNRegion::Standby:
-          // Medium dim
-          r = (r * 5) / 10;
-          g = (g * 5) / 10;
-          b = (b * 5) / 10;
-          break;
-     case memory::PFNRegion::Modified:
-          // Add red tint
-          r = (r + 128) / 2;
-          break;
-     case memory::PFNRegion::Bad:
-          // Very dark
-          return 0x000000;
+     case memory::PFNRegion::Active: return 0x0000ff;
+     case memory::PFNRegion::Standby: return 0x2020fa;
+     case memory::PFNRegion::Free: return 0x000000;
+     case memory::PFNRegion::Modified: return 0xffff00;
+     case memory::PFNRegion::Bad: return 0xff0000;
+     case memory::PFNRegion::Zero: return 0x2e2e2e;
      }
-
-     return (r << 16) | (g << 8) | b;
 }
 
 constexpr std::size_t kMemoryBarHeight = 40;
 
-extern "C" int KiStartup(arch::LoaderParameterBlock* param)
+template <std::size_t N>
+void DrawBar(const memory::PFNRegion (&regionOrder)[N], std::size_t totalPages, std::size_t barWidth,
+             const arch::Framebuffer& framebuffer, std::uint32_t* buffer, std::size_t offset)
 {
-     if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
-
-     g_bootCycles = operations::ReadCurrentCycles();
-     g_loaderBlock = param;
-
-     cpu::Initialise();
-
-     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
-     auto status = memory::physicalAllocator.Initialise(param->memoryDescriptors, 0, 0xffff'8000'0000'0000uz);
-     if (!status) Error(buffer, param);
-
-     for (std::size_t i = 0; i < param->framebuffer.height; i++)
-          std::uninitialized_fill_n(buffer + (i * param->framebuffer.scanlineSize), param->framebuffer.scanlineSize, 0);
-
-     constexpr memory::PFNRegion regionOrder[] = {memory::PFNRegion::Active,   memory::PFNRegion::Standby,
-                                                  memory::PFNRegion::Modified, memory::PFNRegion::Zero,
-                                                  memory::PFNRegion::Free,     memory::PFNRegion::Bad};
-
-     const std::size_t barWidth = param->framebuffer.width;
-     const std::size_t totalPages = memory::physicalAllocator.databaseSize;
-
      std::size_t orderedPageIndex = 0;
      for (const auto region : regionOrder)
      {
           for (std::size_t pfnIndex = 0; pfnIndex < totalPages; pfnIndex++)
           {
+               if (pfnIndex >= memory::physicalAllocator.databaseSize) break;
+
                const auto& pfn = memory::physicalAllocator.database[pfnIndex];
                if (pfn.region != region) continue;
 
                const std::size_t startX = (orderedPageIndex * barWidth) / totalPages;
                const std::size_t endX = ((orderedPageIndex + 1) * barWidth) / totalPages;
 
-               const std::uint32_t colour = ModifyColourByRegion(GetColourForPFNUse(pfn.use), pfn.region);
+               const std::uint32_t colour = GetColourForPFNUse(pfn.use);
+               const std::uint32_t colour2 = GetColourForPFNRegion(pfn.region);
 
                for (std::size_t x = startX; x < endX; x++)
                {
                     for (std::size_t y = 0; y < kMemoryBarHeight; y++)
                     {
-                         buffer[((y + param->framebuffer.height / 2 - kMemoryBarHeight / 2) *
-                                 param->framebuffer.scanlineSize) +
-                                x] = colour;
+                         buffer[((y + offset) * framebuffer.scanlineSize) + x] = colour;
+                    }
+                    for (std::size_t y = kMemoryBarHeight / 2; y < kMemoryBarHeight; y++)
+                    {
+                         buffer[((y + offset) * framebuffer.scanlineSize) + x] = colour2;
                     }
                }
 
                orderedPageIndex++;
           }
      }
+}
 
-     for (const auto entry : param->memoryDescriptors) {}
+void KiInitialise(arch::LoaderParameterBlock* param)
+{
+     g_bootCycles = operations::ReadCurrentCycles();
+     g_loaderBlock = param;
+     auto framebuffer = param->framebuffer;
+
+     cpu::Initialise();
+
+     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
+
+     auto status = memory::physicalAllocator.Initialise(param->memoryDescriptors, param->kernelPhysicalBase,
+                                                        0xffff'8000'0000'0000, param->kernelSize);
+     if (!status) Error(buffer, param);
+
+     for (std::size_t i = 0; i < param->framebuffer.height; i++)
+          std::uninitialized_fill_n(buffer + (i * framebuffer.scanlineSize), framebuffer.scanlineSize, 0);
+}
+
+extern "C" int KiStartup(arch::LoaderParameterBlock* param)
+{
+     if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
+
+     KiInitialise(param);
+     auto framebuffer = param->framebuffer;
+     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
+
+     constexpr memory::PFNRegion regionOrder[] = {memory::PFNRegion::Active,   memory::PFNRegion::Standby,
+                                                  memory::PFNRegion::Modified, memory::PFNRegion::Zero,
+                                                  memory::PFNRegion::Free,     memory::PFNRegion::Bad};
+
+     const std::size_t barWidth = framebuffer.width;
+     const std::size_t totalPages = memory::physicalAllocator.databaseSize;
+     const auto size = framebuffer.totalSize;
+
+     DrawBar(regionOrder, totalPages, barWidth, framebuffer, buffer,
+             (static_cast<std::size_t>(framebuffer.height) / 2uz) - (kMemoryBarHeight / 2));
 
      KiIdleLoop();
      return 0;

@@ -16,6 +16,7 @@ namespace bootloader
           BootContext(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE* systemTable);
 
           bool PrepareLoaderBlock(arch::LoaderParameterBlock* outBlock);
+          bool FinaliseLoaderBlock(arch::LoaderParameterBlock* outBlock);
 
           bool SetupPageTables(void* imageBase, std::size_t imageSize, std::uintptr_t stackPointer,
                                const arch::Framebuffer& framebuffer);
@@ -41,6 +42,7 @@ namespace bootloader
           EFI_BOOT_SERVICES* _bootServices;
           EFI_STATUS _lastStatus;
           std::uintptr_t _pageTableRoot;
+          std::uintptr_t _maxPhysicalAddress;
 
           MappedRegion* _mappedRegions;
           std::size_t _mappedRegionCount;
@@ -58,13 +60,9 @@ namespace bootloader
 
      private:
           static void* AllocatePageTableMemory(std::size_t size);
-          static void TrackPageTableAllocation(void* address, std::size_t size);
           bool MapPageTableStructures();
 
           static EFI_BOOT_SERVICES* s_bootServices;
-          static constexpr std::size_t MaxPageTableAllocations = 256;
-          static std::array<void*, MaxPageTableAllocations> s_pageTableAllocs;
-          static std::size_t s_pageTableAllocCount;
      };
 
 } // namespace bootloader

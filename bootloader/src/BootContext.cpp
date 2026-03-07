@@ -15,13 +15,11 @@ inline CHAR16* operator""_16(const wchar_t* string, [[maybe_unused]] const std::
 namespace bootloader
 {
      EFI_BOOT_SERVICES* BootContext::s_bootServices = nullptr;
-     std::array<void*, BootContext::MaxPageTableAllocations> BootContext::s_pageTableAllocs{};
-     std::size_t BootContext::s_pageTableAllocCount = 0;
 
      BootContext::BootContext(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE* systemTable)
          : _imageHandle(imageHandle), _systemTable(systemTable), _bootServices(systemTable->BootServices),
-           _lastStatus(EFI_SUCCESS), _pageTableRoot(0), _mappedRegions(nullptr), _mappedRegionCount(0),
-           _mappedRegionCapacity(100)
+           _lastStatus(EFI_SUCCESS), _pageTableRoot(0), _maxPhysicalAddress(0), _mappedRegions(nullptr),
+           _mappedRegionCount(0), _mappedRegionCapacity(100)
      {
           s_bootServices = this->_bootServices;
 
@@ -38,23 +36,7 @@ namespace bootloader
           if (EFI_ERROR(status)) return nullptr;
           void* lpMemory = reinterpret_cast<void*>(memory);
 
-          TrackPageTableAllocation(lpMemory, size);
           return lpMemory;
-     }
-
-     void BootContext::TrackPageTableAllocation(void* address, std::size_t size)
-     {
-          if (s_pageTableAllocCount < MaxPageTableAllocations) s_pageTableAllocs[s_pageTableAllocCount++] = address;
-     }
-
-     bool BootContext::MapPageTableStructures()
-     {
-          for (std::size_t i = 0; i < s_pageTableAllocCount; ++i)
-          {
-               std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(s_pageTableAllocs[i]);
-               if (!MapRegion(addr, 0x1000, true, L"Page Table")) return false;
-          }
-          return true;
      }
 
      EFI_STATUS BootContext::GetFramebufferInfo(arch::Framebuffer* outFramebuffer)
@@ -168,7 +150,7 @@ namespace bootloader
                }
 
                entry->data.basePage = descriptor->PhysicalStart / 0x1000;
-               entry->data.baseCount = static_cast<std::uint32_t>(descriptor->NumberOfPages);
+               entry->data.baseCount = descriptor->NumberOfPages;
                entry->next = nullptr;
                entry->previous = previous;
 
@@ -186,8 +168,11 @@ namespace bootloader
      bool BootContext::PrepareLoaderBlock(arch::LoaderParameterBlock* outBlock)
      {
           this->_lastStatus = GetFramebufferInfo(&outBlock->framebuffer);
-          if (EFI_ERROR(this->_lastStatus)) return false;
+          return !EFI_ERROR(this->_lastStatus);
+     }
 
+     bool BootContext::FinaliseLoaderBlock(arch::LoaderParameterBlock* outBlock)
+     {
           this->_lastStatus = BuildMemoryDescriptors(outBlock);
           return !EFI_ERROR(this->_lastStatus);
      }
@@ -250,11 +235,18 @@ namespace bootloader
 
           UINTN numberOfDescriptors = memoryMapSize / descriptorSize;
           bool success = true;
+          this->_maxPhysicalAddress = 0;
 
           for (UINTN i = 0; i < numberOfDescriptors; i++)
           {
                EFI_MEMORY_DESCRIPTOR* desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
                    reinterpret_cast<std::byte*>(memoryMap) + (i * descriptorSize));
+
+               if (desc->Type != EfiReservedMemoryType && desc->Type != EfiUnusableMemory)
+               {
+                    std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
+                    this->_maxPhysicalAddress = std::max(this->_maxPhysicalAddress, endAddress);
+               }
 
                if (desc->Type == EfiACPIReclaimMemory || desc->Type == EfiACPIMemoryNVS ||
                    desc->Type == EfiMemoryMappedIO || desc->Type == EfiMemoryMappedIOPortSpace ||
@@ -335,55 +327,9 @@ namespace bootloader
                }
           }
 
-          UINTN memoryMapSize = 0;
-          UINTN mapKey = 0;
-          UINTN descriptorSize = 0;
-          UINT32 descriptorVersion = 0;
-
-          EFI_STATUS status =
-              this->_bootServices->GetMemoryMap(&memoryMapSize, nullptr, &mapKey, &descriptorSize, &descriptorVersion);
-          if (status != EFI_BUFFER_TOO_SMALL)
-          {
-               this->_lastStatus = status;
-               return false;
-          }
-
-          memoryMapSize += 10 * descriptorSize;
-          EFI_MEMORY_DESCRIPTOR* memoryMap = nullptr;
-          status =
-              this->_bootServices->AllocatePool(EfiLoaderData, memoryMapSize, reinterpret_cast<void**>(&memoryMap));
-          if (EFI_ERROR(status))
-          {
-               this->_lastStatus = status;
-               return false;
-          }
-
-          status = this->_bootServices->GetMemoryMap(&memoryMapSize, memoryMap, &mapKey, &descriptorSize,
-                                                     &descriptorVersion);
-          if (EFI_ERROR(status))
-          {
-               this->_bootServices->FreePool(memoryMap);
-               this->_lastStatus = status;
-               return false;
-          }
-
-          UINTN numberOfDescriptors = memoryMapSize / descriptorSize;
-          std::uintptr_t maxPhysicalAddress = 0;
-
-          for (UINTN i = 0; i < numberOfDescriptors; i++)
-          {
-               EFI_MEMORY_DESCRIPTOR* desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-                   reinterpret_cast<std::byte*>(memoryMap) + (i * descriptorSize));
-
-               if (desc->Type == EfiReservedMemoryType || desc->Type == EfiUnusableMemory) continue;
-               std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
-               maxPhysicalAddress = std::max(maxPhysicalAddress, endAddress);
-          }
-
-          this->_bootServices->FreePool(memoryMap);
-
-          if (maxPhysicalAddress > 0)
-               memory::paging::MapPhysicalMemoryDirect(GetPageTableRoot(), maxPhysicalAddress, AllocatePageTableMemory);
+          if (this->_maxPhysicalAddress > 0)
+               memory::paging::MapPhysicalMemoryDirect(GetPageTableRoot(), this->_maxPhysicalAddress,
+                                                       AllocatePageTableMemory);
 
           this->_lastStatus = EFI_SUCCESS;
           return true;

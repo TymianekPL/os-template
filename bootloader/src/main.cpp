@@ -208,6 +208,16 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
           return bootContext.GetLastStatus();
      }
 
+     conOut->OutputString(conOut, L"Finalising loader block with memory descriptors...\r\n"_16);
+     if (!bootContext.FinaliseLoaderBlock(&loaderBlock))
+     {
+          conOut->OutputString(conOut, L"Failed to finalise loader block, status: "_16);
+          PrintStatus(conOut, bootContext.GetLastStatus());
+          conOut->OutputString(conOut, L"\r\n"_16);
+          WaitForKeyPress(SystemTable);
+          return bootContext.GetLastStatus();
+     }
+
      loaderBlock.kernelVirtualBase = KernelVirtualBase;
      loaderBlock.kernelPhysicalBase = reinterpret_cast<std::uintptr_t>(imageBase);
      loaderBlock.kernelSize = imageLoader.GetImageSize();
@@ -226,6 +236,30 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      }
 
      bootloader::BootContext::ReclaimBootServices(&loaderBlock);
+
+     constexpr std::uintptr_t DirectMapOffset = 0xFFFF800000000000ULL;
+
+     if (loaderBlock.memoryDescriptors.head != nullptr)
+     {
+          structures::ListEntry<arch::MemoryDescriptor>* current = loaderBlock.memoryDescriptors.head;
+          loaderBlock.memoryDescriptors.head = reinterpret_cast<structures::ListEntry<arch::MemoryDescriptor>*>(
+              reinterpret_cast<std::uintptr_t>(loaderBlock.memoryDescriptors.head) + DirectMapOffset);
+
+          while (current != nullptr)
+          {
+               structures::ListEntry<arch::MemoryDescriptor>* next = current->next;
+
+               if (current->next != nullptr)
+                    current->next = reinterpret_cast<structures::ListEntry<arch::MemoryDescriptor>*>(
+                        reinterpret_cast<std::uintptr_t>(current->next) + DirectMapOffset);
+
+               if (current->previous != nullptr)
+                    current->previous = reinterpret_cast<structures::ListEntry<arch::MemoryDescriptor>*>(
+                        reinterpret_cast<std::uintptr_t>(current->previous) + DirectMapOffset);
+
+               current = next;
+          }
+     }
 
      memory::paging::LoadPageTable(bootContext.GetPageTableRoot());
      memory::paging::EnablePaging();

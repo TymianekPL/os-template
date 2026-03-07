@@ -44,14 +44,16 @@ namespace memory
      {
           PFNEntry* database{};
           std::size_t databaseSize{};
+          std::size_t basePfn{};
           structures::SingleListEntry<PFNEntry*>* listNodes{};
+          std::intptr_t physToVirtOffset{};
 
-          structures::SingleList<PFNEntry*> activeList{};
-          structures::SingleList<PFNEntry*> freeList{};
-          structures::SingleList<PFNEntry*> zeroList{};
-          structures::SingleList<PFNEntry*> standbyList{};
-          structures::SingleList<PFNEntry*> badList{};
-          structures::SingleList<PFNEntry*> modifiedList{};
+          structures::AtomicSingleList<PFNEntry*> activeList{};
+          structures::AtomicSingleList<PFNEntry*> freeList{};
+          structures::AtomicSingleList<PFNEntry*> zeroList{};
+          structures::AtomicSingleList<PFNEntry*> standbyList{};
+          structures::AtomicSingleList<PFNEntry*> badList{};
+          structures::AtomicSingleList<PFNEntry*> modifiedList{};
 
           std::atomic<std::size_t> activePages{};
           std::atomic<std::size_t> freePages{};
@@ -76,7 +78,8 @@ namespace memory
           std::atomic<std::size_t> fsCachePages{};
 
           bool Initialise(structures::LinkedList<arch::MemoryDescriptor> memoryDescriptors,
-                          std::uintptr_t kernelPhysicalBase, std::uintptr_t kernelVirtualBase);
+                          std::uintptr_t kernelPhysicalBase, std::uintptr_t kernelVirtualBase, std::size_t kernelSize);
+          void MarkPageActive(std::uintptr_t physicalAddress, PFNUse use);
           std::uintptr_t AllocatePage(PFNUse use);
           std::uintptr_t AllocatePageOverwrite(PFNUse use);
           void ReleaseZeroPage(std::uintptr_t address);
@@ -87,6 +90,7 @@ namespace memory
           std::size_t PopFromList(std::atomic<structures::SingleListEntry<PFNEntry*>*>& listHead) const;
           void IncrementUseCounter(PFNUse use, std::memory_order order = std::memory_order_relaxed);
           void DecrementUseCounter(PFNUse use, std::memory_order order = std::memory_order_relaxed);
+          void MarkExistingPageTablesPreInit();
      };
 
      extern PhysicalMemoryAllocator physicalAllocator;

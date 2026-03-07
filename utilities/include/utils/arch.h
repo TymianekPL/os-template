@@ -28,7 +28,7 @@ namespace arch
      struct MemoryDescriptor
      {
           MemoryType type{};
-          std::uint32_t baseCount{};
+          std::uint64_t baseCount{};
           std::uintptr_t basePage{};
      };
      struct Framebuffer
@@ -64,9 +64,9 @@ namespace arch
 
      // MemoryDescriptor
      static_assert(alignof(MemoryDescriptor) == alignof(std::uintptr_t));
-     static_assert(sizeof(MemoryDescriptor) == sizeof(std::uintptr_t) + sizeof(std::uint64_t));
+     static_assert(sizeof(MemoryDescriptor) == 3 * sizeof(std::uint64_t));
      static_assert(alignof(structures::ListEntry<MemoryDescriptor>) == alignof(std::uintptr_t));
-     static_assert(sizeof(structures::ListEntry<MemoryDescriptor>) == (3uz * sizeof(std::uintptr_t)) + 8);
+     static_assert(sizeof(structures::ListEntry<MemoryDescriptor>) == 5uz * sizeof(std::uintptr_t));
 
      // LoaderParameterBlock
      static_assert(alignof(LoaderParameterBlock) == alignof(std::uintptr_t));

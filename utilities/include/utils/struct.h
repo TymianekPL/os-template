@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 namespace structures
 {
      template <typename TNode> struct ListEntry
@@ -173,5 +175,37 @@ namespace structures
           }
 
           SingleListEntry<TNode>* head;
+     };
+
+     template <typename TNode> struct AtomicSingleList
+     {
+          std::atomic<SingleListEntry<TNode>*> head{nullptr};
+
+          void Push(SingleListEntry<TNode>* node) noexcept
+          {
+               SingleListEntry<TNode>* oldHead = nullptr;
+               do
+               {
+                    oldHead = head.load(std::memory_order_acquire);
+                    node->next = oldHead;
+               } while (
+                   !head.compare_exchange_weak(oldHead, node, std::memory_order::release, std::memory_order_acquire));
+          }
+
+          SingleListEntry<TNode>* Pop() noexcept
+          {
+               SingleListEntry<TNode>* oldHead = nullptr;
+               SingleListEntry<TNode>* newHead = nullptr;
+               do
+               {
+                    oldHead = head.load(std::memory_order::acquire);
+                    if (oldHead == nullptr) return nullptr;
+                    newHead = oldHead->next;
+               } while (!head.compare_exchange_weak(oldHead, newHead, std::memory_order::release,
+                                                    std::memory_order_acquire));
+               return oldHead;
+          }
+
+          [[nodiscard]] bool IsEmpty() const noexcept { return head.load(std::memory_order_acquire) == nullptr; }
      };
 } // namespace structures
