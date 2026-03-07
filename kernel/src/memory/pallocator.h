@@ -78,6 +78,7 @@ namespace memory
           bool Initialise(structures::LinkedList<arch::MemoryDescriptor> memoryDescriptors,
                           std::uintptr_t kernelPhysicalBase, std::uintptr_t kernelVirtualBase);
           std::uintptr_t AllocatePage(PFNUse use);
+          std::uintptr_t AllocatePageOverwrite(PFNUse use);
           void ReleaseZeroPage(std::uintptr_t address);
           void ReleaseFreePage(std::uintptr_t address);
 

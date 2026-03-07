@@ -149,4 +149,11 @@ full_done
     mov     x0, x3
     ret
 _InterlockedCompareExchange64 ENDP
+    EXPORT SwitchStackAndCall
+SwitchStackAndCall PROC
+    and     x0, x0, #0xFFFFFFFFFFFFFFF0
+    mov     sp, x0
+    mov     x0, x1
+    br      x2
+SwitchStackAndCall ENDP
     END

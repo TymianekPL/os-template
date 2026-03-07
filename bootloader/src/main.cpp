@@ -27,6 +27,8 @@ inline CHAR16* operator""_16(const wchar_t* string, [[maybe_unused]] const std::
          reinterpret_cast<const CHAR16*>(string));
 }
 
+extern "C" [[noreturn]] void SwitchStackAndCall(std::uintptr_t newStack, void* parameter, void (*function)(void*));
+
 namespace
 {
      std::uintptr_t GetStackPointer()
@@ -159,6 +161,19 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
           return bootContext.GetLastStatus();
      }
 
+     conOut->OutputString(conOut, L"Allocating kernel stack...\r\n"_16);
+     constexpr UINTN stackPages = KernelStackSize / 0x1000;
+     EFI_PHYSICAL_ADDRESS stackPhysical = 0;
+     status = bootContext.GetBootServices()->AllocatePages(AllocateAnyPages, EfiLoaderData, stackPages, &stackPhysical);
+     if (EFI_ERROR(status))
+     {
+          conOut->OutputString(conOut, L"Failed to allocate kernel stack, status: "_16);
+          PrintStatus(conOut, status);
+          conOut->OutputString(conOut, L"\r\n"_16);
+          WaitForKeyPress(SystemTable);
+          return status;
+     }
+
      conOut->OutputString(conOut, L"Setting up page tables...\r\n"_16);
      std::uintptr_t stackPointer = GetStackPointer();
      if (!bootContext.SetupPageTables(imageBase, imageLoader.GetImageSize(), stackPointer, loaderBlock.framebuffer))
@@ -183,9 +198,21 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      conOut->OutputString(conOut, L"Relocating kernel to virtual addresses...\r\n"_16);
      imageLoader.RelocateToVirtual(KernelVirtualBase);
 
+     conOut->OutputString(conOut, L"Mapping kernel stack to virtual address...\r\n"_16);
+     if (!bootContext.MapKernelStack(stackPhysical, KernelStackSize, KernelStackVirtualBase))
+     {
+          conOut->OutputString(conOut, L"Failed to map kernel stack, status: "_16);
+          PrintStatus(conOut, bootContext.GetLastStatus());
+          conOut->OutputString(conOut, L"\r\n"_16);
+          WaitForKeyPress(SystemTable);
+          return bootContext.GetLastStatus();
+     }
+
      loaderBlock.kernelVirtualBase = KernelVirtualBase;
      loaderBlock.kernelPhysicalBase = reinterpret_cast<std::uintptr_t>(imageBase);
      loaderBlock.kernelSize = imageLoader.GetImageSize();
+     loaderBlock.stackVirtualBase = KernelStackVirtualBase;
+     loaderBlock.stackSize = KernelStackSize;
 
      conOut->OutputString(conOut, L"Exiting boot services...\r\n"_16);
      UINTN mapKey = 0;
@@ -204,8 +231,8 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      memory::paging::EnablePaging();
 
      void* entryPoint = imageLoader.GetEntryPoint();
-     using EntryPointFunc = int (*)(arch::LoaderParameterBlock*);
-     auto entryFunc = reinterpret_cast<EntryPointFunc>(entryPoint);
+     std::uintptr_t newStackTop = KernelStackVirtualBase + KernelStackSize;
 
-     return entryFunc(&loaderBlock); // noreturn
+     using EntryPointFunc = void (*)(void*);
+     SwitchStackAndCall(newStackTop, &loaderBlock, reinterpret_cast<EntryPointFunc>(entryPoint)); // noreturn
 }

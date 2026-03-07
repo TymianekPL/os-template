@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include "kinit.h"
 #include "memory/pallocator.h"
@@ -33,7 +34,7 @@ constexpr std::uint32_t GetColourForPFNUse(memory::PFNUse use)
 {
      switch (use)
      {
-     case memory::PFNUse::Unused: return 0x202020;         // Dark gray
+     case memory::PFNUse::Unused: return 0x202020;         // Dark grey
      case memory::PFNUse::ProcessPrivate: return 0x3498db; // Blue
      case memory::PFNUse::MappedFile: return 0x9b59b6;     // Purple
      case memory::PFNUse::DriverLocked: return 0xe74c3c;   // Red
@@ -46,7 +47,7 @@ constexpr std::uint32_t GetColourForPFNUse(memory::PFNUse use)
      case memory::PFNUse::PTE: return 0xf1c40f;            // Yellow
      case memory::PFNUse::Shareable: return 0x27ae60;      // Green
      case memory::PFNUse::PageTable: return 0x2ecc71;      // Light green
-     case memory::PFNUse::FSCache: return 0x95a5a6;        // Light gray
+     case memory::PFNUse::FSCache: return 0x95a5a6;        // Light grey
      default: return 0x000000;                             // Black
      }
 }
@@ -104,7 +105,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
      cpu::Initialise();
 
      std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
-     auto status = memory::physicalAllocator.Initialise(param->memoryDescriptors, 0, 0xffff'8000'0000'0000ui64);
+     auto status = memory::physicalAllocator.Initialise(param->memoryDescriptors, 0, 0xffff'8000'0000'0000uz);
      if (!status) Error(buffer, param);
 
      for (std::size_t i = 0; i < param->framebuffer.height; i++)
@@ -128,7 +129,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                const std::size_t startX = (orderedPageIndex * barWidth) / totalPages;
                const std::size_t endX = ((orderedPageIndex + 1) * barWidth) / totalPages;
 
-               const std::uint32_t colour = GetColourForPFNUse(pfn.use);
+               const std::uint32_t colour = ModifyColourByRegion(GetColourForPFNUse(pfn.use), pfn.region);
 
                for (std::size_t x = startX; x < endX; x++)
                {

@@ -53,10 +53,15 @@ constexpr std::size_t OsVersionMinor = 1;
 // Kernel virtual address base (higher half)
 #if defined(ARCH_X8664)
 constexpr std::uintptr_t KernelVirtualBase = 0xFFFFFFFF80000000ULL;
+constexpr std::uintptr_t KernelStackVirtualBase = 0xFFFFFFFF7FC00000ULL;
 #elif defined(ARCH_X8632)
 constexpr std::uintptr_t KernelVirtualBase = 0xC0000000UL;
+constexpr std::uintptr_t KernelStackVirtualBase = 0xBFC00000UL;
 #elif defined(ARCH_ARM64)
 constexpr std::uintptr_t KernelVirtualBase = 0xFFFFFF8000000000ULL;
+constexpr std::uintptr_t KernelStackVirtualBase = 0xFFFFFF7FC0000000ULL;
 #else
 #error "Unsupported architecture"
 #endif
+
+constexpr std::size_t KernelStackSize = 1024ULL * 1024ULL; // 1MB

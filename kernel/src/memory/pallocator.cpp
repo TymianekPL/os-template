@@ -175,6 +175,43 @@ namespace memory
 
           return pfnIndex * PageSize;
      }
+     std::uintptr_t PhysicalMemoryAllocator::AllocatePageOverwrite(PFNUse use)
+     {
+          std::size_t pfnIndex = InvalidPFN;
+
+          auto* freeHead = reinterpret_cast<std::atomic<structures::SingleListEntry<PFNEntry*>*>*>(&freeList.head);
+          pfnIndex = PopFromList(*freeHead);
+
+          if (pfnIndex != InvalidPFN) { freePages.fetch_sub(1, std::memory_order_relaxed); }
+          else
+          {
+               auto* zeroHead = reinterpret_cast<std::atomic<structures::SingleListEntry<PFNEntry*>*>*>(&zeroList.head);
+               pfnIndex = PopFromList(*zeroHead);
+
+               if (pfnIndex != InvalidPFN) { zeroPages.fetch_sub(1, std::memory_order_relaxed); }
+               else
+               {
+                    auto* standbyHead =
+                        reinterpret_cast<std::atomic<structures::SingleListEntry<PFNEntry*>*>*>(&standbyList.head);
+                    pfnIndex = PopFromList(*standbyHead);
+
+                    if (pfnIndex != InvalidPFN) { standbyPages.fetch_sub(1, std::memory_order_relaxed); }
+                    else
+                         return ~0;
+               }
+          }
+
+          PFNUse oldUse = database[pfnIndex].use;
+          database[pfnIndex].use = use;
+          database[pfnIndex].region = PFNRegion::Active;
+          database[pfnIndex].referenceCount = 1;
+
+          DecrementUseCounter(oldUse);
+          IncrementUseCounter(use);
+          activePages.fetch_add(1, std::memory_order_relaxed);
+
+          return pfnIndex * PageSize;
+     }
 
      void PhysicalMemoryAllocator::ReleaseZeroPage(std::uintptr_t address)
      {

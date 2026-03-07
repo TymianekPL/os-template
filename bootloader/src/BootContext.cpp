@@ -411,6 +411,27 @@ namespace bootloader
           return result;
      }
 
+     bool BootContext::MapKernelStack(std::uintptr_t physicalBase, std::size_t stackSize, std::uintptr_t virtualBase)
+     {
+          if (this->_pageTableRoot == 0) return false;
+
+          std::uintptr_t alignedPhysStart = physicalBase & ~0xFFFull;
+          std::uintptr_t alignedVirtStart = virtualBase & ~0xFFFull;
+          std::size_t alignedSize = (stackSize + 0xFFF) & ~0xFFFull;
+
+          memory::PageMapping mapping{};
+          mapping.virtualAddress = alignedVirtStart;
+          mapping.physicalAddress = alignedPhysStart;
+          mapping.size = alignedSize;
+          mapping.writable = true;
+          mapping.userAccessible = false;
+          mapping.cacheDisable = false;
+
+          bool result = memory::paging::MapPage(this->_pageTableRoot, mapping, AllocatePageTableMemory);
+          if (result) TrackMappedRegion(alignedVirtStart, alignedSize, L"Kernel Stack");
+          return result;
+     }
+
      bool BootContext::ExitBootServices(UINTN* outMapKey)
      {
           UINTN memoryMapSize = 0;

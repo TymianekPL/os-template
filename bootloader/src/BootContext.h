@@ -20,6 +20,7 @@ namespace bootloader
           bool SetupPageTables(void* imageBase, std::size_t imageSize, std::uintptr_t stackPointer,
                                const arch::Framebuffer& framebuffer);
           bool RemapKernelVirtual(void* physicalBase, std::size_t imageSize, std::uintptr_t virtualBase);
+          bool MapKernelStack(std::uintptr_t physicalBase, std::size_t stackSize, std::uintptr_t virtualBase);
           bool ExitBootServices(UINTN* outMapKey);
           static void ReclaimBootServices(arch::LoaderParameterBlock* loaderBlock);
           [[nodiscard]] EFI_STATUS GetLastStatus() const { return _lastStatus; }
