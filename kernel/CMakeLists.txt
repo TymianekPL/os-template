@@ -1,6 +1,8 @@
 add_executable(Kernel
     src/main.cpp
     src/kinit.cpp
+    src/memory/pallocator.cpp
+    src/crtstub.cpp
 )
 set(KERNEL_IMAGE "kernel")
 
@@ -36,8 +38,8 @@ if(MSVC)
         /D_NO_DEBUG_HEAP=1
         /DUNICODE
         /D_UNICODE
+        /D_HAS_EXCEPTIONS=0
         /D_MSVC_STL_HARDENING=0
-        "/DEFIAPI=__cdecl"
     )
     
     target_link_options(Kernel PRIVATE
@@ -66,6 +68,9 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -D_GLIBCXX_ASSERTIONS=0
         -D_LIBCPP_ENABLE_ASSERTIONS=0
         -D_ITERATOR_DEBUG_LEVEL=0
+        -D_MSVC_STL_HARDENING=0
+        -D_HAS_EXCEPTIONS=0
+        -D_SECURE_SCL=0
         -DUNICODE
         -D_UNICODE
     )

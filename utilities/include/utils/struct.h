@@ -8,20 +8,36 @@ namespace structures
           ListEntry* previous{};
           TNode data{};
      };
+     template <typename TNode> struct SingleListEntry
+     {
+          SingleListEntry* next{};
+          TNode data{};
+     };
 
      template <typename TNode> struct LinkedList
      {
           struct Iterator
           {
-               Iterator operator++()
+               Iterator& operator++() noexcept
                {
                     this->head = this->head->next;
                     return *this;
                }
-               Iterator operator++(int)
+               Iterator operator++(int) noexcept
                {
                     Iterator copy = *this;
                     this->head = this->head->next;
+                    return copy;
+               }
+               Iterator& operator--() noexcept
+               {
+                    this->head = this->head->previous;
+                    return *this;
+               }
+               Iterator operator--(int) noexcept
+               {
+                    Iterator copy = *this;
+                    this->head = this->head->previous;
                     return copy;
                }
                bool operator==(const Iterator& other) const noexcept { return other.head == this->head; }
@@ -32,13 +48,30 @@ namespace structures
           };
           struct ConstIterator
           {
-               ConstIterator operator++() const noexcept { this->head = this->head->next; }
-               ConstIterator operator++(int) const noexcept
+               ConstIterator& operator++() noexcept
+               {
+                    this->head = this->head->next;
+                    return *this;
+               }
+               ConstIterator operator++(int) noexcept
                {
                     ConstIterator copy = *this;
                     this->head = this->head->next;
                     return copy;
                }
+               ConstIterator& operator--() noexcept
+               {
+                    this->head = this->head->previous;
+                    return *this;
+               }
+               ConstIterator operator--(int) noexcept
+               {
+                    ConstIterator copy = *this;
+                    this->head = this->head->previous;
+                    return copy;
+               }
+               bool operator==(const ConstIterator& other) const noexcept { return other.head == this->head; }
+               bool operator!=(const ConstIterator& other) const noexcept { return other.head != this->head; }
                const TNode& operator*() const noexcept { return this->head->data; }
                const ListEntry<TNode>* head;
           };
@@ -61,6 +94,84 @@ namespace structures
                return ConstIterator{nullptr};
           }
 
+          [[nodiscard]] ConstIterator cbegin() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{this->head};
+          }
+          [[nodiscard]] ConstIterator cend() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{nullptr};
+          }
+
           ListEntry<TNode>* head;
+     };
+     template <typename TNode> struct SingleList
+     {
+          struct Iterator
+          {
+               Iterator& operator++() noexcept
+               {
+                    this->head = this->head->next;
+                    return *this;
+               }
+               Iterator operator++(int) noexcept
+               {
+                    Iterator copy = *this;
+                    this->head = this->head->next;
+                    return copy;
+               }
+               bool operator==(const Iterator& other) const noexcept { return other.head == this->head; }
+               bool operator!=(const Iterator& other) const noexcept { return other.head != this->head; }
+               TNode& operator*() noexcept { return this->head->data; }
+               const TNode& operator*() const noexcept { return this->head->data; }
+               SingleListEntry<TNode>* head;
+          };
+          struct ConstIterator
+          {
+               ConstIterator& operator++() noexcept
+               {
+                    this->head = this->head->next;
+                    return *this;
+               }
+               ConstIterator operator++(int) noexcept
+               {
+                    ConstIterator copy = *this;
+                    this->head = this->head->next;
+                    return copy;
+               }
+               bool operator==(const ConstIterator& other) const noexcept { return other.head == this->head; }
+               bool operator!=(const ConstIterator& other) const noexcept { return other.head != this->head; }
+               const TNode& operator*() const noexcept { return this->head->data; }
+               mutable const SingleListEntry<TNode>* head;
+          };
+
+          [[nodiscard]] Iterator begin() noexcept // NOLINT(readability-identifier-naming)
+          {
+               return Iterator{this->head};
+          }
+          [[nodiscard]] Iterator end() noexcept // NOLINT(readability-identifier-naming)
+          {
+               return Iterator{nullptr};
+          }
+
+          [[nodiscard]] ConstIterator begin() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{this->head};
+          }
+          [[nodiscard]] ConstIterator end() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{nullptr};
+          }
+
+          [[nodiscard]] ConstIterator cbegin() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{this->head};
+          }
+          [[nodiscard]] ConstIterator cend() const noexcept // NOLINT(readability-identifier-naming)
+          {
+               return ConstIterator{nullptr};
+          }
+
+          SingleListEntry<TNode>* head;
      };
 } // namespace structures

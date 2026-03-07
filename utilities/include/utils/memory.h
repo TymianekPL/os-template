@@ -34,6 +34,8 @@ namespace memory
           constexpr std::size_t GetPageSize() noexcept;
           std::uintptr_t CreatePageTable(void* (*allocator)(std::size_t));
           bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t));
+          
+          bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress, void* (*allocator)(std::size_t));
 
           void LoadPageTable(std::uintptr_t pageTableRoot);
           std::uintptr_t GetCurrentPageTable();

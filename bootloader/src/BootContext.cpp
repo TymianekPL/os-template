@@ -2,6 +2,7 @@
 
 #include <utils/identify.h>
 #include <utils/struct.h>
+#include <algorithm>
 #include "Uefi/UefiMultiPhase.h"
 #include "utils/memory.h"
 
@@ -333,6 +334,56 @@ namespace bootloader
                     return false;
                }
           }
+
+          UINTN memoryMapSize = 0;
+          UINTN mapKey = 0;
+          UINTN descriptorSize = 0;
+          UINT32 descriptorVersion = 0;
+
+          EFI_STATUS status =
+              this->_bootServices->GetMemoryMap(&memoryMapSize, nullptr, &mapKey, &descriptorSize, &descriptorVersion);
+          if (status != EFI_BUFFER_TOO_SMALL)
+          {
+               this->_lastStatus = status;
+               return false;
+          }
+
+          memoryMapSize += 10 * descriptorSize;
+          EFI_MEMORY_DESCRIPTOR* memoryMap = nullptr;
+          status =
+              this->_bootServices->AllocatePool(EfiLoaderData, memoryMapSize, reinterpret_cast<void**>(&memoryMap));
+          if (EFI_ERROR(status))
+          {
+               this->_lastStatus = status;
+               return false;
+          }
+
+          status = this->_bootServices->GetMemoryMap(&memoryMapSize, memoryMap, &mapKey, &descriptorSize,
+                                                     &descriptorVersion);
+          if (EFI_ERROR(status))
+          {
+               this->_bootServices->FreePool(memoryMap);
+               this->_lastStatus = status;
+               return false;
+          }
+
+          UINTN numberOfDescriptors = memoryMapSize / descriptorSize;
+          std::uintptr_t maxPhysicalAddress = 0;
+
+          for (UINTN i = 0; i < numberOfDescriptors; i++)
+          {
+               EFI_MEMORY_DESCRIPTOR* desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+                   reinterpret_cast<std::byte*>(memoryMap) + (i * descriptorSize));
+
+               if (desc->Type == EfiReservedMemoryType || desc->Type == EfiUnusableMemory) continue;
+               std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
+               maxPhysicalAddress = std::max(maxPhysicalAddress, endAddress);
+          }
+
+          this->_bootServices->FreePool(memoryMap);
+
+          if (maxPhysicalAddress > 0)
+               memory::paging::MapPhysicalMemoryDirect(GetPageTableRoot(), maxPhysicalAddress, AllocatePageTableMemory);
 
           this->_lastStatus = EFI_SUCCESS;
           return true;
