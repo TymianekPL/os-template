@@ -172,9 +172,8 @@ void KiInitialise(arch::LoaderParameterBlock* param)
      g_kernelProcess->ReserveMemoryFixedAsCommitted(param->kernelVirtualBase, param->kernelSize,
                                                     memory::MemoryProtection::ExecuteReadWrite,
                                                     memory::PFNUse::KernelHeap);
-     g_kernelProcess->ReserveMemoryFixedAsCommitted(memory::virtualOffset,
-                                                    memory::physicalAllocator.databaseSize * 0x1000uz,
-                                                    memory::MemoryProtection::ReadWrite, memory::PFNUse::DriverLocked);
+     g_kernelProcess->ReserveMemoryFixed(memory::virtualOffset, memory::physicalAllocator.databaseSize * 0x1000uz,
+                                         memory::MemoryProtection::ReadWrite, memory::PFNUse::DriverLocked);
 }
 void PrintVadEntryCallback(const memory::VADEntry& entry)
 {
