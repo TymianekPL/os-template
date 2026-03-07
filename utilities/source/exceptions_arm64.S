@@ -37,3 +37,11 @@ ExceptionVectorTable:
 15: b 15b
     .balign 0x80
 16: b 16b
+
+# void SwitchStackAndCall(uintptr_t newStack, void* parameter, void (*function)(void*))
+.global SwitchStackAndCall
+SwitchStackAndCall:
+    and     x0, x0, #0xFFFFFFFFFFFFFFF0
+    mov     sp, x0
+    mov     x0, x1
+    br      x2

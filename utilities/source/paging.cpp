@@ -106,6 +106,67 @@ namespace memory::paging
           return true;
      }
 
+     bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
+                                  void* (*allocator)(std::size_t))
+     {
+          constexpr std::uintptr_t DirectMapOffset = 0xFFFF800000000000ULL;
+          constexpr std::size_t LargePageSize = 0x200000; // 2MB
+
+          auto* pml4 = reinterpret_cast<X64PageEntry*>(pageTableRoot);
+
+          // TODO: Check 2MiB support (maybe add 1GiB support?)
+          for (std::uintptr_t pAddr = 0; pAddr < maxPhysicalAddress; pAddr += LargePageSize)
+          {
+               std::uintptr_t vAddr = pAddr + DirectMapOffset;
+
+               std::uint64_t pml4Index = (vAddr >> 39) & 0x1FF;
+               std::uint64_t pdptIndex = (vAddr >> 30) & 0x1FF;
+               std::uint64_t pdIndex = (vAddr >> 21) & 0x1FF;
+
+               if (!pml4[pml4Index].present)
+               {
+                    auto* pdpt = static_cast<X64PageEntry*>(allocator(0x1000));
+                    if (!pdpt) return false;
+                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pdpt)[i] = 0; }
+
+                    pml4[pml4Index].physicalAddress = reinterpret_cast<std::uintptr_t>(pdpt) >> 12;
+                    pml4[pml4Index].present = 1;
+                    pml4[pml4Index].writable = 1;
+                    pml4[pml4Index].noExecute = 1;
+               }
+
+               auto* pdpt =
+                   reinterpret_cast<X64PageEntry*>(static_cast<std::uintptr_t>(pml4[pml4Index].physicalAddress) << 12);
+
+               if (!pdpt[pdptIndex].present)
+               {
+                    auto* pd = static_cast<X64PageEntry*>(allocator(0x1000));
+                    if (!pd) return false;
+                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pd)[i] = 0; }
+
+                    pdpt[pdptIndex].physicalAddress = reinterpret_cast<std::uintptr_t>(pd) >> 12;
+                    pdpt[pdptIndex].present = 1;
+                    pdpt[pdptIndex].writable = 1;
+                    pdpt[pdptIndex].noExecute = 1;
+               }
+
+               auto* pd =
+                   reinterpret_cast<X64PageEntry*>(static_cast<std::uintptr_t>(pdpt[pdptIndex].physicalAddress) << 12);
+
+               pd[pdIndex].physicalAddress = pAddr >> 12;
+               pd[pdIndex].present = 1;
+               pd[pdIndex].writable = 1;
+               pd[pdIndex].writeThrough = 1;
+               pd[pdIndex].cacheDisable = 0;
+               pd[pdIndex].largePage = 1;
+               pd[pdIndex].global = 1;
+               pd[pdIndex].noExecute = 1;
+               pd[pdIndex].userAccessible = 0;
+          }
+
+          return true;
+     }
+
      void LoadPageTable(std::uintptr_t pageTableRoot)
      {
 #ifdef COMPILER_MSVC
@@ -146,6 +207,7 @@ namespace memory::paging
 #ifdef COMPILER_MSVC
           std::uint64_t cr4 = __readcr4();
           cr4 |= (1ULL << 5); // CR4.PAE
+          cr4 |= (1ULL << 7); // CR4.PGE (global pages)
           __writecr4(cr4);
 
           std::uint64_t efer = __readmsr(0xC0000080); // IA32_EFER
@@ -159,6 +221,7 @@ namespace memory::paging
           std::uint64_t cr4 = 0;
           asm volatile("mov %%cr4, %0" : "=r"(cr4));
           cr4 |= (1ULL << 5); // CR4.PAE
+          cr4 |= (1ULL << 7); // CR4.PGE (global pages)
           asm volatile("mov %0, %%cr4" ::"r"(cr4) : "memory");
 
           std::uint32_t eferLow{};
@@ -257,6 +320,55 @@ namespace memory::paging
           return true;
      }
 
+     bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
+                                  void* (*allocator)(std::size_t))
+     {
+          // For x86-32, use top of 32-bit address space
+          constexpr std::uintptr_t DIRECT_MAP_OFFSET = 0xC0000000UL;
+          constexpr std::size_t LARGE_PAGE_SIZE = 0x200000; // 2MB
+
+          auto* pdpt = reinterpret_cast<X86PageEntry*>(pageTableRoot);
+
+          // Map in 2MB chunks
+          for (std::uintptr_t pAddr = 0; pAddr < maxPhysicalAddress && pAddr < (0x100000000ULL - DIRECT_MAP_OFFSET);
+               pAddr += LARGE_PAGE_SIZE)
+          {
+               std::uintptr_t vAddr = pAddr + DIRECT_MAP_OFFSET;
+
+               std::uint32_t pdptIndex = (vAddr >> 30) & 0x3;
+               std::uint32_t pdIndex = (vAddr >> 21) & 0x1FF;
+
+               // Ensure PDPT entry exists
+               if (!pdpt[pdptIndex].present)
+               {
+                    auto* pd = static_cast<X86PageEntry*>(allocator(0x1000));
+                    if (!pd) return false;
+                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pd)[i] = 0; }
+
+                    pdpt[pdptIndex].physicalAddress = reinterpret_cast<std::uintptr_t>(pd) >> 12;
+                    pdpt[pdptIndex].present = 1;
+                    pdpt[pdptIndex].writable = 1;
+                    pdpt[pdptIndex].noExecute = 1;
+               }
+
+               auto* pd =
+                   reinterpret_cast<X86PageEntry*>(static_cast<std::uintptr_t>(pdpt[pdptIndex].physicalAddress) << 12);
+
+               // Create 2MB page entry with: WT, G, RW, XD
+               pd[pdIndex].physicalAddress = pAddr >> 12;
+               pd[pdIndex].present = 1;
+               pd[pdIndex].writable = 1;
+               pd[pdIndex].writeThrough = 1; // WT
+               pd[pdIndex].cacheDisable = 0;
+               pd[pdIndex].largePage = 1; // 2MB page
+               pd[pdIndex].global = 1;    // G
+               pd[pdIndex].noExecute = 1; // XD
+               pd[pdIndex].userAccessible = 0;
+          }
+
+          return true;
+     }
+
      void LoadPageTable(std::uintptr_t pageTableRoot) { asm volatile("mov %0, %%cr3" ::"r"(pageTableRoot) : "memory"); }
 
      std::uintptr_t GetCurrentPageTable()
@@ -283,6 +395,7 @@ namespace memory::paging
           asm volatile("mov %%cr4, %0" : "=r"(cr4));
           cr4 |= (1 << 5); // CR4.PAE
           cr4 |= (1 << 4); // CR4.PSE
+          cr4 |= (1 << 7); // CR4.PGE (global pages)
           asm volatile("mov %0, %%cr4" ::"r"(cr4) : "memory");
 
           std::uint32_t cr0 = 0;
@@ -392,6 +505,64 @@ namespace memory::paging
           return true;
      }
 
+     bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
+                                  void* (*allocator)(std::size_t))
+     {
+          constexpr std::uintptr_t DIRECT_MAP_OFFSET = 0xFFFF800000000000ULL;
+          constexpr std::size_t BLOCK_SIZE = 0x200000;
+
+          auto* l0 = reinterpret_cast<ARMPageEntry*>(pageTableRoot);
+
+          for (std::uintptr_t pAddr = 0; pAddr < maxPhysicalAddress; pAddr += BLOCK_SIZE)
+          {
+               std::uintptr_t vAddr = pAddr + DIRECT_MAP_OFFSET;
+
+               std::uint64_t l0Index = (vAddr >> 39) & 0x1FF;
+               std::uint64_t l1Index = (vAddr >> 30) & 0x1FF;
+               std::uint64_t l2Index = (vAddr >> 21) & 0x1FF;
+
+               if (!l0[l0Index].valid)
+               {
+                    auto* l1 = static_cast<ARMPageEntry*>(allocator(0x1000));
+                    if (!l1) return false;
+                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(l1)[i] = 0; }
+
+                    l0[l0Index].address = reinterpret_cast<std::uintptr_t>(l1) >> 12;
+                    l0[l0Index].valid = 1;
+                    l0[l0Index].table = 1;
+               }
+
+               auto* l1 = reinterpret_cast<ARMPageEntry*>(static_cast<std::uintptr_t>(l0[l0Index].address) << 12);
+
+               if (!l1[l1Index].valid)
+               {
+                    auto* l2 = static_cast<ARMPageEntry*>(allocator(0x1000));
+                    if (!l2) return false;
+                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(l2)[i] = 0; }
+
+                    l1[l1Index].address = reinterpret_cast<std::uintptr_t>(l2) >> 12;
+                    l1[l1Index].valid = 1;
+                    l1[l1Index].table = 1;
+               }
+
+               auto* l2 = reinterpret_cast<ARMPageEntry*>(static_cast<std::uintptr_t>(l1[l1Index].address) << 12);
+
+               l2[l2Index].address = pAddr >> 12;
+               l2[l2Index].valid = 1;
+               l2[l2Index].table = 0;
+               l2[l2Index].af = 1;
+               l2[l2Index].ap = 0;
+               l2[l2Index].sh = 3;
+               l2[l2Index].attrIndex = 1;
+               l2[l2Index].ns = 0;
+               l2[l2Index].ng = 0;
+               l2[l2Index].pxn = 1;
+               l2[l2Index].uxn = 1;
+          }
+
+          return true;
+     }
+
      void LoadPageTable(std::uintptr_t pageTableRoot)
      {
 #ifdef COMPILER_MSVC
@@ -409,7 +580,8 @@ namespace memory::paging
           tcr |= (0x5ULL << 32); // IPS = 48-bit PA
           ::_WriteStatusReg(ARM64_SYSREG(3, 0, 2, 0, 2), tcr);
 
-          std::uint64_t mair = 0xFFULL;
+          // MAIR: Index 0 = 0xFF (write-back), Index 1 = 0xBB (write-through)
+          std::uint64_t mair = 0xBBFFULL;
           ::_WriteStatusReg(ARM64_SYSREG(3, 0, 10, 2, 0), mair);
 
           ::__dsb(_ARM64_BARRIER_ISH);
@@ -431,7 +603,8 @@ namespace memory::paging
           tcr |= (0x5ULL << 32); // IPS = 48-bit PA
           asm volatile("msr tcr_el1, %0" ::"r"(tcr));
 
-          std::uint64_t mair = 0xFFULL;
+          // MAIR: Index 0 = 0xFF (write-back), Index 1 = 0xBB (write-through)
+          std::uint64_t mair = 0xBBFFULL;
           asm volatile("msr mair_el1, %0" ::"r"(mair));
 
           asm volatile("dsb ish");

@@ -16,4 +16,17 @@ _LoadTaskRegister PROC
     ret
 _LoadTaskRegister ENDP
 
+; void SwitchStackAndCall(uintptr_t newStack, void* parameter, void (*function)(void*))
+PUBLIC SwitchStackAndCall
+SwitchStackAndCall PROC
+    mov eax, [esp+4]
+    mov edx, [esp+8]
+    mov ecx, [esp+12]
+    and eax, -16
+    mov esp, eax
+    push edx
+    call ecx
+    int 3
+SwitchStackAndCall ENDP
+
 END

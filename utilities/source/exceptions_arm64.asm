@@ -55,4 +55,105 @@ Vector14
 Vector15
     B Vector15
 
+
+    AREA |.text|, CODE, READONLY
+
+    EXPORT _InterlockedExchangeAdd64_nf
+_InterlockedExchangeAdd64_nf PROC
+add_nf_loop
+    ldxr    x2, [x0]
+    add     x3, x2, x1
+    stxr    w4, x3, [x0]
+    cbnz    w4, add_nf_loop
+    mov     x0, x2
+    ret
+_InterlockedExchangeAdd64_nf ENDP
+
+    EXPORT _InterlockedExchangeAdd64_rel
+_InterlockedExchangeAdd64_rel PROC
+add_rel_loop
+    ldxr    x2, [x0]
+    add     x3, x2, x1
+    stlxr   w4, x3, [x0]
+    cbnz    w4, add_rel_loop
+    mov     x0, x2
+    ret
+_InterlockedExchangeAdd64_rel ENDP
+    EXPORT _InterlockedExchangeAdd64_acq
+_InterlockedExchangeAdd64_acq PROC
+add_acq_loop
+    ldaxr   x2, [x0]
+    add     x3, x2, x1
+    stxr    w4, x3, [x0]
+    cbnz    w4, add_acq_loop
+    mov     x0, x2
+    ret
+_InterlockedExchangeAdd64_acq ENDP
+    EXPORT _InterlockedExchangeAdd64
+_InterlockedExchangeAdd64 PROC
+add_full_loop
+    ldaxr   x2, [x0]
+    add     x3, x2, x1
+    stlxr   w4, x3, [x0]
+    cbnz    w4, add_full_loop
+    dmb     ish
+    mov     x0, x2
+    ret
+_InterlockedExchangeAdd64 ENDP
+    EXPORT _InterlockedCompareExchange64_nf
+_InterlockedCompareExchange64_nf PROC
+nf_loop
+    ldaxr   x3, [x0]
+    cmp     x3, x2
+    b.ne    nf_done
+    stxr    w4, x1, [x0]
+    cbnz    w4, nf_loop
+nf_done
+    mov     x0, x3
+    ret
+_InterlockedCompareExchange64_nf ENDP
+    EXPORT _InterlockedCompareExchange64_acq
+_InterlockedCompareExchange64_acq PROC
+acq_loop
+    ldaxr   x3, [x0]
+    cmp     x3, x2
+    b.ne    acq_done
+    stxr    w4, x1, [x0]
+    cbnz    w4, acq_loop
+acq_done
+    mov     x0, x3
+    ret
+_InterlockedCompareExchange64_acq ENDP
+    EXPORT _InterlockedCompareExchange64_rel
+_InterlockedCompareExchange64_rel PROC
+rel_loop
+    ldaxr   x3, [x0]
+    cmp     x3, x2
+    b.ne    rel_done
+    stlxr   w4, x1, [x0]
+    cbnz    w4, rel_loop
+rel_done
+    mov     x0, x3
+    ret
+_InterlockedCompareExchange64_rel ENDP
+    EXPORT _InterlockedCompareExchange64
+_InterlockedCompareExchange64 PROC
+full_loop
+    ldaxr   x3, [x0]
+    cmp     x3, x2
+    b.ne    full_done
+    stlxr   w4, x1, [x0]
+    cbnz    w4, full_loop
+full_done
+    dmb     ish
+    mov     x0, x3
+    ret
+_InterlockedCompareExchange64 ENDP
+    EXPORT SwitchStackAndCall
+SwitchStackAndCall PROC
+    and     x0, x0, #0xFFFFFFFFFFFFFFF0
+    mov     sp, x0
+    mov     x0, x1
+    br      x2
+SwitchStackAndCall ENDP
     END

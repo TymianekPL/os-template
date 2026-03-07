@@ -21,6 +21,12 @@ if(MSVC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     string(REPLACE "/MTd" "/MT" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     string(REPLACE "/Ob0" "/Ob1" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
     
+    if(MSVC)
+        string(APPEND CMAKE_CXX_FLAGS_DEBUG " /Zi")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        string(APPEND CMAKE_CXX_FLAGS_DEBUG " -g")
+    endif()
+    
     # Do the same for linker flags
     string(REPLACE "--dependent-lib=msvcrtd" "" CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG}")
     string(REPLACE "-lmsvcrtd" "" CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG}")

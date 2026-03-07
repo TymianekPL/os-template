@@ -2,6 +2,7 @@
 
 #include <utils/identify.h>
 #include <utils/struct.h>
+#include <algorithm>
 #include "Uefi/UefiMultiPhase.h"
 #include "utils/memory.h"
 
@@ -14,13 +15,11 @@ inline CHAR16* operator""_16(const wchar_t* string, [[maybe_unused]] const std::
 namespace bootloader
 {
      EFI_BOOT_SERVICES* BootContext::s_bootServices = nullptr;
-     std::array<void*, BootContext::MaxPageTableAllocations> BootContext::s_pageTableAllocs{};
-     std::size_t BootContext::s_pageTableAllocCount = 0;
 
      BootContext::BootContext(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE* systemTable)
          : _imageHandle(imageHandle), _systemTable(systemTable), _bootServices(systemTable->BootServices),
-           _lastStatus(EFI_SUCCESS), _pageTableRoot(0), _mappedRegions(nullptr), _mappedRegionCount(0),
-           _mappedRegionCapacity(100)
+           _lastStatus(EFI_SUCCESS), _pageTableRoot(0), _maxPhysicalAddress(0), _mappedRegions(nullptr),
+           _mappedRegionCount(0), _mappedRegionCapacity(100)
      {
           s_bootServices = this->_bootServices;
 
@@ -37,23 +36,7 @@ namespace bootloader
           if (EFI_ERROR(status)) return nullptr;
           void* lpMemory = reinterpret_cast<void*>(memory);
 
-          TrackPageTableAllocation(lpMemory, size);
           return lpMemory;
-     }
-
-     void BootContext::TrackPageTableAllocation(void* address, std::size_t size)
-     {
-          if (s_pageTableAllocCount < MaxPageTableAllocations) s_pageTableAllocs[s_pageTableAllocCount++] = address;
-     }
-
-     bool BootContext::MapPageTableStructures()
-     {
-          for (std::size_t i = 0; i < s_pageTableAllocCount; ++i)
-          {
-               std::uintptr_t addr = reinterpret_cast<std::uintptr_t>(s_pageTableAllocs[i]);
-               if (!MapRegion(addr, 0x1000, true, L"Page Table")) return false;
-          }
-          return true;
      }
 
      EFI_STATUS BootContext::GetFramebufferInfo(arch::Framebuffer* outFramebuffer)
@@ -167,7 +150,7 @@ namespace bootloader
                }
 
                entry->data.basePage = descriptor->PhysicalStart / 0x1000;
-               entry->data.baseCount = static_cast<std::uint32_t>(descriptor->NumberOfPages);
+               entry->data.baseCount = descriptor->NumberOfPages;
                entry->next = nullptr;
                entry->previous = previous;
 
@@ -185,8 +168,11 @@ namespace bootloader
      bool BootContext::PrepareLoaderBlock(arch::LoaderParameterBlock* outBlock)
      {
           this->_lastStatus = GetFramebufferInfo(&outBlock->framebuffer);
-          if (EFI_ERROR(this->_lastStatus)) return false;
+          return !EFI_ERROR(this->_lastStatus);
+     }
 
+     bool BootContext::FinaliseLoaderBlock(arch::LoaderParameterBlock* outBlock)
+     {
           this->_lastStatus = BuildMemoryDescriptors(outBlock);
           return !EFI_ERROR(this->_lastStatus);
      }
@@ -249,11 +235,18 @@ namespace bootloader
 
           UINTN numberOfDescriptors = memoryMapSize / descriptorSize;
           bool success = true;
+          this->_maxPhysicalAddress = 0;
 
           for (UINTN i = 0; i < numberOfDescriptors; i++)
           {
                EFI_MEMORY_DESCRIPTOR* desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
                    reinterpret_cast<std::byte*>(memoryMap) + (i * descriptorSize));
+
+               if (desc->Type != EfiReservedMemoryType && desc->Type != EfiUnusableMemory)
+               {
+                    std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
+                    this->_maxPhysicalAddress = std::max(this->_maxPhysicalAddress, endAddress);
+               }
 
                if (desc->Type == EfiACPIReclaimMemory || desc->Type == EfiACPIMemoryNVS ||
                    desc->Type == EfiMemoryMappedIO || desc->Type == EfiMemoryMappedIOPortSpace ||
@@ -334,6 +327,10 @@ namespace bootloader
                }
           }
 
+          if (this->_maxPhysicalAddress > 0)
+               memory::paging::MapPhysicalMemoryDirect(GetPageTableRoot(), this->_maxPhysicalAddress,
+                                                       AllocatePageTableMemory);
+
           this->_lastStatus = EFI_SUCCESS;
           return true;
      }
@@ -357,6 +354,27 @@ namespace bootloader
 
           bool result = memory::paging::MapPage(this->_pageTableRoot, mapping, AllocatePageTableMemory);
           if (result) TrackMappedRegion(alignedVirtStart, alignedSize, L"Kernel Virtual");
+          return result;
+     }
+
+     bool BootContext::MapKernelStack(std::uintptr_t physicalBase, std::size_t stackSize, std::uintptr_t virtualBase)
+     {
+          if (this->_pageTableRoot == 0) return false;
+
+          std::uintptr_t alignedPhysStart = physicalBase & ~0xFFFull;
+          std::uintptr_t alignedVirtStart = virtualBase & ~0xFFFull;
+          std::size_t alignedSize = (stackSize + 0xFFF) & ~0xFFFull;
+
+          memory::PageMapping mapping{};
+          mapping.virtualAddress = alignedVirtStart;
+          mapping.physicalAddress = alignedPhysStart;
+          mapping.size = alignedSize;
+          mapping.writable = true;
+          mapping.userAccessible = false;
+          mapping.cacheDisable = false;
+
+          bool result = memory::paging::MapPage(this->_pageTableRoot, mapping, AllocatePageTableMemory);
+          if (result) TrackMappedRegion(alignedVirtStart, alignedSize, L"Kernel Stack");
           return result;
      }
 
