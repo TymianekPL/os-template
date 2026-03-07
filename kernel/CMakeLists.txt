@@ -1,7 +1,9 @@
 add_executable(Kernel
     src/main.cpp
     src/kinit.cpp
+    src/process.cpp
     src/memory/pallocator.cpp
+    src/memory/vallocator.cpp
     src/crtstub.cpp
 )
 set(KERNEL_IMAGE "kernel")

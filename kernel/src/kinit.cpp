@@ -2,3 +2,4 @@
 
 std::uint64_t g_bootCycles{};
 arch::LoaderParameterBlock* g_loaderBlock{};
+kernel::ProcessControlBlock* g_kernelProcess{};
