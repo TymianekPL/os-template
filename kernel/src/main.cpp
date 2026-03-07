@@ -108,8 +108,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
      if (!status) Error(buffer, param);
 
      for (std::size_t i = 0; i < param->framebuffer.height; i++)
-          std::uninitialized_fill_n(buffer + (i * param->framebuffer.scanlineSize), param->framebuffer.scanlineSize,
-                                    0);
+          std::uninitialized_fill_n(buffer + (i * param->framebuffer.scanlineSize), param->framebuffer.scanlineSize, 0);
 
      constexpr memory::PFNRegion regionOrder[] = {memory::PFNRegion::Active,   memory::PFNRegion::Standby,
                                                   memory::PFNRegion::Modified, memory::PFNRegion::Zero,
@@ -135,7 +134,9 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                {
                     for (std::size_t y = 0; y < kMemoryBarHeight; y++)
                     {
-                         buffer[((y + param->framebuffer.height / 2 - kMemoryBarHeight / 2) * param->framebuffer.scanlineSize) + x] = colour;
+                         buffer[((y + param->framebuffer.height / 2 - kMemoryBarHeight / 2) *
+                                 param->framebuffer.scanlineSize) +
+                                x] = colour;
                     }
                }
 
