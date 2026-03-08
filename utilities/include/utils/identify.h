@@ -64,4 +64,4 @@ constexpr std::uintptr_t KernelStackVirtualBase = 0xFFFFFF7FC0000000ULL;
 #error "Unsupported architecture"
 #endif
 
-constexpr std::size_t KernelStackSize = 1024ULL * 1024ULL; // 1MB
+constexpr std::size_t KernelStackSize = 1024ULL * 1024ULL * 2uz; // 2MiB
