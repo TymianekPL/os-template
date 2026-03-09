@@ -81,14 +81,14 @@ echo AAVMF: !AAVMF_PATH!
 
 echo [4/4] Starting QEMU...
 qemu-system-aarch64.exe ^
-     -M virt ^
-     -cpu cortex-a57 ^
+     -machine virt,gic-version=3 ^
+     -cpu cortex-a72 ^
      -drive if=pflash,format=raw,readonly=on,file="!AAVMF_PATH!" ^
      -drive file=fat:rw:%BUILD_DIR%\guest_root,format=raw,media=disk ^
      -m 512M ^
      -net none ^
      -device ramfb ^
-     -serial stdio -d mmu,int -D qemu_arm.txt -no-reboot -no-shutdown ^
+     -serial stdio -d int -D qemu_arm.txt -no-reboot -no-shutdown ^
      -monitor tcp:127.0.0.1:4445,server,nowait
 
 echo.

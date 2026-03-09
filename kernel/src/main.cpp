@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include "cpu/interrupts.h"
 #include "kinit.h"
 #include "memory/pallocator.h"
 #include "memory/vallocator.h"
@@ -12,6 +13,11 @@
 #include "utils/memory.h"
 #include "utils/operations.h"
 
+#ifdef ARCH_ARM64
+#ifdef COMPILER_MSVC
+#include <intrin.h>
+#endif
+#endif
 alignas(std::max_align_t) static std::byte g_kernelProcessStorage[sizeof(kernel::ProcessControlBlock)]; // NOLINT
 
 void KiIdleLoop()
@@ -34,113 +40,6 @@ void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
 
      operations::DisableInterrupts();
      while (true) operations::Halt();
-}
-
-constexpr std::uint32_t GetColourForPFNUse(memory::PFNUse use)
-{
-     switch (use)
-     {
-     case memory::PFNUse::Unused: return 0x202020;         // Dark grey
-     case memory::PFNUse::ProcessPrivate: return 0x3498db; // Blue
-     case memory::PFNUse::MappedFile: return 0x9b59b6;     // Purple
-     case memory::PFNUse::DriverLocked: return 0xe74c3c;   // Red
-     case memory::PFNUse::UserStack: return 0x1abc9c;      // Turquoise
-     case memory::PFNUse::KernelStack: return 0xf39c12;    // Orange
-     case memory::PFNUse::KernelHeap: return 0xe67e22;     // Dark orange
-     case memory::PFNUse::MetaFile: return 0x8e44ad;       // Dark purple
-     case memory::PFNUse::NonPagedPool: return 0xc0392b;   // Dark red
-     case memory::PFNUse::PagedPool: return 0x16a085;      // Dark turquoise
-     case memory::PFNUse::PTE: return 0xf1c40f;            // Yellow
-     case memory::PFNUse::Shareable: return 0x27ae60;      // Green
-     case memory::PFNUse::PageTable: return 0x2ecc71;      // Light green
-     case memory::PFNUse::FSCache: return 0x95a5a6;        // Light gray
-     default: return 0x000000;                             // Black
-     }
-}
-
-constexpr std::uint32_t GetColourForPFNRegion(memory::PFNRegion use)
-{
-     switch (use)
-     {
-     case memory::PFNRegion::Active: return 0x0000ff;
-     case memory::PFNRegion::Standby: return 0x2020fa;
-     case memory::PFNRegion::Free: return 0x000000;
-     case memory::PFNRegion::Modified: return 0xffff00;
-     case memory::PFNRegion::Bad: return 0xff0000;
-     case memory::PFNRegion::Zero: return 0x2e2e2e;
-     }
-}
-
-constexpr std::size_t kMemoryBarHeight = 40;
-
-constexpr std::uint32_t kTestPassColour = 0x00ff00; // Green
-constexpr std::uint32_t kTestFailColour = 0xff0000; // Red
-constexpr std::size_t kTestSquareSize = 25;
-constexpr std::size_t kTestSquareSpacing = 5;
-
-void DrawTestResult(std::uint32_t* buffer, const arch::Framebuffer& framebuffer, std::size_t testIndex, bool passed)
-{
-     debugging::DbgWrite(u8"Test {}: {}\r\n", testIndex, passed);
-
-     const std::uint32_t colour = passed ? kTestPassColour : kTestFailColour;
-     std::size_t baseX = (testIndex * (kTestSquareSize + kTestSquareSpacing));
-     std::size_t baseY = 10;
-     while (baseX + kTestSquareSize >= framebuffer.width)
-     {
-          baseX -= framebuffer.width;
-          baseY += kTestSquareSize + kTestSquareSpacing;
-     }
-     baseX += 10;
-
-     for (std::size_t y = 0; y < kTestSquareSize; y++)
-     {
-          for (std::size_t x = 0; x < kTestSquareSize; x++)
-          {
-               const std::size_t pixelX = baseX + x;
-               const std::size_t pixelY = baseY + y;
-               if (pixelX < framebuffer.width && pixelY < framebuffer.height)
-               {
-                    buffer[(pixelY * framebuffer.scanlineSize) + pixelX] = colour;
-               }
-          }
-     }
-}
-
-template <std::size_t N>
-void DrawBar(const memory::PFNRegion (&regionOrder)[N], std::size_t totalPages, std::size_t barWidth, // NOLINT
-             const arch::Framebuffer& framebuffer, std::uint32_t* buffer, std::size_t offset)
-{
-     std::size_t orderedPageIndex = 0;
-     for (const auto region : regionOrder)
-     {
-          for (std::size_t pfnIndex = 0; pfnIndex < totalPages; pfnIndex++)
-          {
-               if (pfnIndex >= memory::physicalAllocator.databaseSize) break;
-
-               const auto& pfn = memory::physicalAllocator.database[pfnIndex];
-               if (pfn.region != region) continue;
-
-               const std::size_t startX = (orderedPageIndex * barWidth) / totalPages;
-               const std::size_t endX = ((orderedPageIndex + 1) * barWidth) / totalPages;
-
-               const std::uint32_t colour = GetColourForPFNUse(pfn.use);
-               const std::uint32_t colour2 = GetColourForPFNRegion(pfn.region);
-
-               for (std::size_t x = startX; x < endX; x++)
-               {
-                    for (std::size_t y = 0; y < kMemoryBarHeight; y++)
-                    {
-                         buffer[((y + offset) * framebuffer.scanlineSize) + x] = colour;
-                    }
-                    for (std::size_t y = kMemoryBarHeight / 2; y < kMemoryBarHeight; y++)
-                    {
-                         buffer[((y + offset) * framebuffer.scanlineSize) + x] = colour2;
-                    }
-               }
-
-               orderedPageIndex++;
-          }
-     }
 }
 
 void KiInitialise(arch::LoaderParameterBlock* param)
@@ -174,6 +73,8 @@ void KiInitialise(arch::LoaderParameterBlock* param)
                                                     memory::PFNUse::KernelHeap);
      g_kernelProcess->ReserveMemoryFixed(memory::virtualOffset, memory::physicalAllocator.databaseSize * 0x1000uz,
                                          memory::MemoryProtection::ReadWrite, memory::PFNUse::DriverLocked);
+
+     KeInitialiseCpu(param->acpiPhysical);
 }
 void PrintVadEntryCallback(const memory::VADEntry& entry)
 {
@@ -439,326 +340,16 @@ constexpr const char8_t* FormatSize(std::size_t size, std::size_t& outVal)
      outVal = size;
      return u8"B";
 }
+
 extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 {
      if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
+     cpu::g_systemBootTimeOffsetSeconds = param->bootTimeSeconds;
 
      KiInitialise(param);
 
-     auto& vad = g_kernelProcess->GetVadAllocator();
-     std::size_t testIndex = 0;
      auto framebuffer = param->framebuffer;
      std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
-
-     constexpr memory::PFNRegion regionOrder[] = {memory::PFNRegion::Active,   memory::PFNRegion::Standby,
-                                                  memory::PFNRegion::Modified, memory::PFNRegion::Zero,
-                                                  memory::PFNRegion::Free,     memory::PFNRegion::Bad};
-
-     const std::size_t barWidth = framebuffer.width;
-     const std::size_t totalPages = memory::physicalAllocator.databaseSize;
-     const auto size = framebuffer.totalSize;
-
-     // Test 1: Basic allocation
-     bool test1 = false;
-     const auto addr1 =
-         g_kernelProcess->ReserveMemory(4096, memory::MemoryProtection::ReadWrite, memory::PFNUse::ProcessPrivate);
-     test1 = (addr1 != 0);
-     DrawTestResult(buffer, framebuffer, testIndex++, test1);
-
-     // Test 2: Sequential allocation
-     bool test2 = false;
-     const auto addr2 =
-         g_kernelProcess->ReserveMemory(8192, memory::MemoryProtection::ReadWrite, memory::PFNUse::ProcessPrivate);
-     test2 = (addr2 != 0 && addr2 > addr1);
-     DrawTestResult(buffer, framebuffer, testIndex++, test2);
-
-     // Test 3: Fixed address reservation
-     const std::uintptr_t fixedAddr = 0xffff'a000'0010'0000;
-     bool test3 = g_kernelProcess->ReserveMemoryFixed(fixedAddr, 4096, memory::MemoryProtection::ReadWrite,
-                                                      memory::PFNUse::KernelHeap);
-     DrawTestResult(buffer, framebuffer, testIndex++, test3);
-
-     // Test 4: Overlap detection - should fail
-     bool test4 = !g_kernelProcess->ReserveMemoryFixed(fixedAddr, 4096, memory::MemoryProtection::ReadWrite,
-                                                       memory::PFNUse::KernelHeap);
-     DrawTestResult(buffer, framebuffer, testIndex++, test4);
-
-     // Test 5: Partial overlap detection
-     bool test5 = !g_kernelProcess->ReserveMemoryFixed(fixedAddr + 2048, 4096, memory::MemoryProtection::ReadWrite,
-                                                       memory::PFNUse::KernelHeap);
-     DrawTestResult(buffer, framebuffer, testIndex++, test5);
-
-     // Test 6: FindContaining (exact base)
-     auto* node = g_kernelProcess->QueryAddress(addr1);
-     bool test6 = (node != nullptr && node->entry.baseAddress == addr1);
-     DrawTestResult(buffer, framebuffer, testIndex++, test6);
-
-     // Test 7: FindContaining (middle of allocation)
-     node = g_kernelProcess->QueryAddress(addr1 + 2048);
-     bool test7 = (node != nullptr && node->entry.baseAddress == addr1);
-     DrawTestResult(buffer, framebuffer, testIndex++, test7);
-
-     // Test 8: Query non-existent address
-     node = g_kernelProcess->QueryAddress(0xffff'ffff'ffff'0000);
-     bool test8 = (node == nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test8);
-
-     // Test 9: Free memory
-     bool test9 = g_kernelProcess->FreeMemory(addr1);
-     DrawTestResult(buffer, framebuffer, testIndex++, test9);
-
-     // Test 10: After freeing, query should return null
-     node = g_kernelProcess->QueryAddress(addr1);
-     bool test10 = (node == nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test10);
-
-     // Test 11: Allocate at hint address
-     const auto addr3 = g_kernelProcess->ReserveMemoryAt(
-         0xffff'a000'0020'0000, 4096, memory::MemoryProtection::ReadWrite, memory::PFNUse::UserStack);
-     bool test11 = (addr3 != 0);
-     DrawTestResult(buffer, framebuffer, testIndex++, test11);
-
-     // Test 12: Multiple allocations and search
-     const auto addr4 =
-         g_kernelProcess->ReserveMemory(16384, memory::MemoryProtection::Execute, memory::PFNUse::ProcessPrivate);
-     node = g_kernelProcess->QueryAddress(addr4 + 8192);
-     bool test12 = (addr4 != 0 && node != nullptr && node->entry.size == 16384 &&
-                    node->entry.protection == memory::MemoryProtection::Execute);
-     DrawTestResult(buffer, framebuffer, testIndex++, test12);
-
-     // Test 13: Verify search still works after multiple operations
-     node = g_kernelProcess->QueryAddress(addr2);
-     bool test13 = (node != nullptr && node->entry.baseAddress == addr2 && node->entry.size == 8192);
-     DrawTestResult(buffer, framebuffer, testIndex++, test13);
-
-     // Test 14: Free non-existent address should fail
-     bool test14 = !g_kernelProcess->FreeMemory(0xffff'a000'dead'beef);
-     DrawTestResult(buffer, framebuffer, testIndex++, test14);
-
-     // Test 15: Allocate after freed space
-     const auto addr5 =
-         g_kernelProcess->ReserveMemory(4096, memory::MemoryProtection::ReadOnly, memory::PFNUse::FSCache);
-     bool test15 = (addr5 != 0);
-     DrawTestResult(buffer, framebuffer, testIndex++, test15);
-
-     // Test 16: Search boundaries
-     auto* search1 = vad.Search(addr2);
-     bool test16 = (search1 != nullptr && search1->entry.baseAddress == addr2);
-     DrawTestResult(buffer, framebuffer, testIndex++, test16);
-
-     // Test 17: Overlap detection with existing allocations
-     auto* overlap = vad.FindOverlap(addr2, 4096);
-     bool test17 = (overlap != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test17);
-
-     // Test 18: Overlap with reused freed space (addr5 reused addr1's location)
-     overlap = vad.FindOverlap(addr2 - 4096, 2048);
-     bool test18 = (overlap != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test18);
-
-     // ===== NEW COMMIT/DECOMMIT TESTS =====
-
-     // Test 19: AllocateVirtualMemory with Reserve only
-     void* allocAddr1 = g_kernelProcess->AllocateVirtualMemory(nullptr, 8192, memory::AllocationFlags::Reserve,
-                                                               memory::MemoryProtection::ReadWrite);
-     bool test19 = (allocAddr1 != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test19);
-
-     // Test 20: Verify reserved memory is in Reserved state
-     if (allocAddr1)
-     {
-          auto* allocNode1 = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(allocAddr1));
-          bool test20 = (allocNode1 != nullptr && allocNode1->entry.state == memory::VADMemoryState::Reserved);
-          DrawTestResult(buffer, framebuffer, testIndex++, test20);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 21: AllocateVirtualMemory with Reserve + Commit (lazy)
-     void* allocAddr2 = g_kernelProcess->AllocateVirtualMemory(
-         nullptr, 16384, memory::AllocationFlags::Reserve | memory::AllocationFlags::Commit,
-         memory::MemoryProtection::ReadWrite);
-     bool test21 = (allocAddr2 != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test21);
-
-     // Test 22: Verify committed memory is in Committed state (lazy)
-     if (allocAddr2)
-     {
-          auto* allocNode2 = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(allocAddr2));
-          bool test22 = (allocNode2 != nullptr && allocNode2->entry.state == memory::VADMemoryState::Committed &&
-                         !allocNode2->entry.immediatePhysical);
-          DrawTestResult(buffer, framebuffer, testIndex++, test22);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 23: AllocateVirtualMemory with Reserve + Commit + ImmediatePhysical
-     void* allocAddr3 =
-         g_kernelProcess->AllocateVirtualMemory(nullptr, 12288,
-                                                memory::AllocationFlags::Reserve | memory::AllocationFlags::Commit |
-                                                    memory::AllocationFlags::ImmediatePhysical,
-                                                memory::MemoryProtection::ReadWrite);
-     bool test23 = (allocAddr3 != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test23);
-
-     // Test 24: Verify immediate physical memory has flag set
-     if (allocAddr3)
-     {
-          auto* allocNode3 = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(allocAddr3));
-          bool test24 = (allocNode3 != nullptr && allocNode3->entry.state == memory::VADMemoryState::Committed &&
-                         allocNode3->entry.immediatePhysical);
-          DrawTestResult(buffer, framebuffer, testIndex++, test24);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 25: Decommit previously committed memory
-     bool test25 = false;
-     if (allocAddr2)
-     {
-          test25 = g_kernelProcess->ReleaseVirtualMemory(allocAddr2, 0, memory::AllocationFlags::Decommit);
-     }
-     DrawTestResult(buffer, framebuffer, testIndex++, test25);
-
-     // Test 26: Verify decommitted memory is back to Reserved state
-     if (allocAddr2 && test25)
-     {
-          auto* allocNode2Check = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(allocAddr2));
-          bool test26 =
-              (allocNode2Check != nullptr && allocNode2Check->entry.state == memory::VADMemoryState::Reserved);
-          DrawTestResult(buffer, framebuffer, testIndex++, test26);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 27: Release entire allocation
-     bool test27 = false;
-     if (allocAddr1)
-     {
-          test27 = g_kernelProcess->ReleaseVirtualMemory(allocAddr1, 0, memory::AllocationFlags::Release);
-     }
-     DrawTestResult(buffer, framebuffer, testIndex++, test27);
-
-     // Test 28: Verify released memory is gone
-     if (allocAddr1 && test27)
-     {
-          auto* allocNode1Check = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(allocAddr1));
-          bool test28 = (allocNode1Check == nullptr);
-          DrawTestResult(buffer, framebuffer, testIndex++, test28);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 29: Check statistics are being tracked
-     const auto& stats = vad.GetStatistics();
-     bool test29 = (stats.reserveOperations.load(std::memory_order_relaxed) > 0 &&
-                    stats.commitOperations.load(std::memory_order_relaxed) > 0);
-     DrawTestResult(buffer, framebuffer, testIndex++, test29);
-
-     // Test 30: Verify commit charge and reserved bytes are tracked
-     bool test30 = (stats.totalReservedBytes.load(std::memory_order_relaxed) > 0);
-     DrawTestResult(buffer, framebuffer, testIndex++, test30);
-
-     // ===== PARTIAL DECOMMIT TESTS =====
-
-     // Test 31: Allocate and commit a large region for partial decommit testing
-     void* partialAddr = g_kernelProcess->AllocateVirtualMemory(
-         nullptr, 32768, memory::AllocationFlags::Reserve | memory::AllocationFlags::Commit,
-         memory::MemoryProtection::ReadWrite);
-     bool test31 = (partialAddr != nullptr);
-     DrawTestResult(buffer, framebuffer, testIndex++, test31);
-
-     // Test 32: Partially decommit the middle (8KB starting at offset 8KB)
-     bool test32 = false;
-     if (partialAddr)
-     {
-          void* middleAddr = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(partialAddr) + 8192);
-          test32 = g_kernelProcess->ReleaseVirtualMemory(middleAddr, 8192, memory::AllocationFlags::Decommit);
-     }
-     DrawTestResult(buffer, framebuffer, testIndex++, test32);
-
-     // Test 33: Verify the front part is still committed
-     if (partialAddr && test32)
-     {
-          auto* frontNode = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(partialAddr));
-          bool test33 = (frontNode != nullptr && frontNode->entry.state == memory::VADMemoryState::Committed &&
-                         frontNode->entry.size == 8192);
-
-          DrawTestResult(buffer, framebuffer, testIndex++, test33);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 34: Verify the middle part is reserved (decommitted)
-     if (partialAddr && test32)
-     {
-          void* middleAddr = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(partialAddr) + 8192);
-          auto* middleNode = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(middleAddr));
-          bool test34 = (middleNode != nullptr && middleNode->entry.state == memory::VADMemoryState::Reserved &&
-                         middleNode->entry.size == 8192);
-          DrawTestResult(buffer, framebuffer, testIndex++, test34);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 35: Verify the back part is still committed
-     if (partialAddr && test32)
-     {
-          void* backAddr = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(partialAddr) + 16384);
-          auto* backNode = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(backAddr));
-          bool test35 = (backNode != nullptr && backNode->entry.state == memory::VADMemoryState::Committed &&
-                         backNode->entry.size == 16384);
-          DrawTestResult(buffer, framebuffer, testIndex++, test35);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     // Test 36: Decommit from start (partial from beginning)
-     void* headDecommitAddr = g_kernelProcess->AllocateVirtualMemory(
-         nullptr, 16384, memory::AllocationFlags::Reserve | memory::AllocationFlags::Commit,
-         memory::MemoryProtection::ReadWrite);
-     bool test36 = false;
-     if (headDecommitAddr)
-     {
-          test36 = g_kernelProcess->ReleaseVirtualMemory(headDecommitAddr, 4096, memory::AllocationFlags::Decommit);
-     }
-     DrawTestResult(buffer, framebuffer, testIndex++, test36);
-
-     // Test 37: Verify head is decommitted and tail is still committed
-     if (headDecommitAddr && test36)
-     {
-          auto* headNode = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(headDecommitAddr));
-          void* tailAddr = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(headDecommitAddr) + 4096);
-          auto* tailNode = g_kernelProcess->QueryAddress(reinterpret_cast<std::uintptr_t>(tailAddr));
-
-          bool test37 = (headNode != nullptr && headNode->entry.state == memory::VADMemoryState::Reserved &&
-                         headNode->entry.size == 4096 && tailNode != nullptr &&
-                         tailNode->entry.state == memory::VADMemoryState::Committed && tailNode->entry.size == 12288);
-          DrawTestResult(buffer, framebuffer, testIndex++, test37);
-     }
-     else
-     {
-          DrawTestResult(buffer, framebuffer, testIndex++, false);
-     }
-
-     DrawBar(regionOrder, totalPages, barWidth, framebuffer, buffer,
-             (static_cast<std::size_t>(framebuffer.height) / 2uz) - (kMemoryBarHeight / 2));
 
      while (true)
      {
@@ -783,6 +374,43 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
           case 's': PrintVMStats(); break;
 
           case 'p': PrintPhysicalStats(); break;
+          case 't':
+          {
+               const auto millisecondsSinceUnixEpoch = KeCurrentSystemTime();
+               std::uint64_t totalSeconds = millisecondsSinceUnixEpoch / 1000;
+               std::uint64_t second = totalSeconds % 60;
+               std::uint64_t totalMinutes = totalSeconds / 60;
+               std::uint64_t minute = totalMinutes % 60;
+               std::uint64_t totalHours = totalMinutes / 60;
+               std::uint64_t hour = totalHours % 24;
+               std::uint64_t totalDays = totalHours / 24;
+
+               // Convert days since epoch to year/month/day
+               auto isLeap = [](std::uint32_t y) { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0); };
+
+               std::uint32_t year = 1970;
+               while (true)
+               {
+                    std::uint64_t daysInYear = isLeap(year) ? 366 : 365;
+                    if (totalDays < daysInYear) break;
+                    totalDays -= daysInYear;
+                    year++;
+               }
+
+               constexpr std::uint8_t daysInMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+               std::uint32_t month = 1;
+               for (std::uint32_t m = 0; m < 12; m++)
+               {
+                    std::uint64_t dim = daysInMonth[m] + (m == 1 && isLeap(year) ? 1 : 0);
+                    if (totalDays < dim) break;
+                    totalDays -= dim;
+                    month++;
+               }
+               std::uint32_t day = static_cast<std::uint32_t>(totalDays) + 1;
+
+               debugging::DbgWrite(u8"{}.{}.{} {}:{}:{}\r\n", day, month, year, hour, minute, second);
+               break;
+          }
 
           case 'v':
           {
@@ -812,12 +440,12 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 
                auto readByte = [&](std::uintptr_t byteAddr) -> std::uint8_t*
                {
-                    static std::uint8_t storage{};
+                    static unsigned char storage{};
 
                     auto* node = g_kernelProcess->GetVadAllocator().FindContaining(byteAddr);
                     if (!node) return nullptr;
                     if (node->entry.state != memory::VADMemoryState::Committed) return nullptr;
-                    storage = byteAddr;
+                    storage = *reinterpret_cast<unsigned char*>(byteAddr);
                     return &storage;
                };
 
@@ -887,6 +515,40 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                               0x111111);
                break;
           }
+          case 'i':
+          {
+               *reinterpret_cast<volatile char*>(0x8493247389) = 123;
+               break;
+          }
+          case 'I':
+          {
+#ifdef ARCH_ARM64
+#ifdef COMPILER_MSVC
+               __svc(0x2c);
+#else
+               asm volatile("svc %0" : : "I"(44) : "memory");
+#endif
+#else
+#ifdef COMPILER_MSVC
+               __int2c();
+#else
+               asm volatile("int $44");
+#endif
+#endif
+               break;
+          }
+          case 'l':
+          {
+               const auto loCurrent = KeReadLowResolutionTimer();
+               const auto hiCurrent = KeReadHighResolutionTimer();
+               const auto loFrequency = KeReadLowResolutionTimerFrequency();
+               const auto hiFrequency = KeReadHighResolutionTimerFrequency();
+               debugging::DbgWrite(u8"Low = {} at {}Hz (~{}s)\r\n", loCurrent, loFrequency,
+                                   loFrequency == 0 ? 0 : loCurrent / loFrequency);
+               debugging::DbgWrite(u8"High = {} at {}Hz (~{}s)\r\n", hiCurrent, hiFrequency,
+                                   hiFrequency == 0 ? 0 : hiCurrent / hiFrequency);
+               break;
+          }
           case 'h': // help
                debugging::DbgWrite(u8"Commands:\r\n");
                debugging::DbgWrite(u8"m - full physical memory map\r\n");
@@ -903,3 +565,9 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
      KiIdleLoop();
      return 0;
 }
+extern "C" int _purecall() // NOLINT
+{
+     operations::DisableInterrupts();
+     while (true) operations::Halt();
+}
+extern "C" int _fltused = 1;

@@ -5,6 +5,7 @@
 
 #include <Uefi.h>
 
+#include <Guid/Acpi.h>
 #include <Guid/FileInfo.h>
 #include <Protocol/GraphicsOutput.h>
 #include <Protocol/SimpleFileSystem.h>
@@ -20,6 +21,35 @@
 EFI_GUID gEfiSimpleFileSystemProtocolGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
 EFI_GUID gEfiFileInfoGuid = EFI_FILE_INFO_ID;
 EFI_GUID gEfiGraphicsOutputProtocolGuid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+EFI_GUID gEfiAcpi20TableGuid = ACPI_10_TABLE_GUID;
+EFI_GUID gEfiAcpi10TableGuid = EFI_ACPI_TABLE_GUID;
+
+static BOOLEAN CompareGuid(const EFI_GUID* Guid1, const EFI_GUID* Guid2)
+{
+     for (UINTN i = 0; i < sizeof(EFI_GUID); i++)
+     {
+          if ((reinterpret_cast<const std::byte*>(Guid1))[i] != (reinterpret_cast<const std::byte*>(Guid2))[i])
+               return FALSE;
+     }
+     return TRUE;
+}
+
+static EFI_PHYSICAL_ADDRESS GetAcpiRsdpAddress(EFI_SYSTEM_TABLE* SystemTable)
+{
+     for (UINTN i = 0; i < SystemTable->NumberOfTableEntries; i++)
+     {
+          if (CompareGuid(&SystemTable->ConfigurationTable[i].VendorGuid, &gEfiAcpi20TableGuid))
+          {
+               return reinterpret_cast<EFI_PHYSICAL_ADDRESS>(SystemTable->ConfigurationTable[i].VendorTable);
+          }
+          if (CompareGuid(&SystemTable->ConfigurationTable[i].VendorGuid, &gEfiAcpi10TableGuid))
+          {
+               return reinterpret_cast<EFI_PHYSICAL_ADDRESS>(SystemTable->ConfigurationTable[i].VendorTable);
+          }
+     }
+
+     return 0; // :(
+}
 
 inline CHAR16* operator""_16(const wchar_t* string, [[maybe_unused]] const std::size_t length)
 {
@@ -93,6 +123,23 @@ namespace
 
 EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* conOut;
 
+static std::uint64_t UefiTimeToUnix(const EFI_TIME& t)
+{
+     constexpr std::array<std::uint16_t, 12> daysBeforeMonth = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+
+     auto isLeap = [](std::uint32_t y) { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0); };
+
+     std::uint32_t year = t.Year;
+     std::uint64_t days = 0;
+     for (std::uint32_t y = 1970; y < year; y++) days += isLeap(y) ? 366 : 365;
+
+     days += daysBeforeMonth[t.Month - 1];
+     if (t.Month > 2 && isLeap(year)) days++;
+     days += t.Day - 1;
+
+     return (days * 86400) + (t.Hour * 3600uz) + (t.Minute * 60uz) + t.Second;
+}
+
 extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable)
 {
      conOut = SystemTable->ConOut;
@@ -136,6 +183,8 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      void* imageBase = imageLoader.LoadImage(kernelData, &status);
 
      fileLoader.FreeFile(kernelData);
+     EFI_TIME uefiTime{};
+     SystemTable->RuntimeServices->GetTime(&uefiTime, nullptr);
 
      if (EFI_ERROR(status) || !imageBase)
      {
@@ -160,6 +209,7 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
           WaitForKeyPress(SystemTable);
           return bootContext.GetLastStatus();
      }
+     const auto acpiPhysical = GetAcpiRsdpAddress(SystemTable);
 
      conOut->OutputString(conOut, L"Allocating kernel stack...\r\n"_16);
      constexpr UINTN stackPages = KernelStackSize / 0x1000;
@@ -223,6 +273,8 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      loaderBlock.kernelSize = imageLoader.GetImageSize();
      loaderBlock.stackVirtualBase = KernelStackVirtualBase;
      loaderBlock.stackSize = KernelStackSize;
+     loaderBlock.acpiPhysical = acpiPhysical;
+     loaderBlock.bootTimeSeconds = UefiTimeToUnix(uefiTime);
 
      conOut->OutputString(conOut, L"Exiting boot services...\r\n"_16);
      UINTN mapKey = 0;
@@ -269,4 +321,9 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
 
      using EntryPointFunc = void (*)(void*);
      SwitchStackAndCall(newStackTop, &loaderBlock, reinterpret_cast<EntryPointFunc>(entryPoint)); // noreturn
+}
+
+extern "C" void KeHandleInterruptFrame() // a stub in case something went horribly wrong lol
+{
+     while (true);
 }

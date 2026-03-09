@@ -136,8 +136,8 @@ void operations::WriteSerialCharacter(char value)
      auto* uart = reinterpret_cast<UARTRegisters*>(UART0_BASE + 0xffff'8000'0000'0000);
 
 #ifdef COMPILER_MSVC    // MSVC vvv
-     while (uart->FR & (1 << 5)) Yield();
-     uart->DR = static_cast<std::uint32_t>(value);
+     while (uart->fr & (1 << 5)) Yield();
+     uart->dr = static_cast<std::uint32_t>(value);
 #elifdef COMPILER_CLANG // ^^^ MSVC / Clang vvv
      while (uart->fr & (1u << 5)) Yield();
      uart->dr = static_cast<std::uint32_t>(static_cast<unsigned char>(value));
@@ -145,9 +145,18 @@ void operations::WriteSerialCharacter(char value)
 }
 char operations::ReadSerialCharacter()
 {
-     auto* uart = reinterpret_cast<UARTRegisters*>(UART0_BASE + 0xffff'8000'0000'0000);
-     while (uart->fr & (1u << 4)) Yield();
+     volatile auto* uart = reinterpret_cast<volatile UARTRegisters*>(0x09000000uz + 0xffff'8000'0000'0000uz);
 
+     while (uart->fr & (1u << 4)) Halt();
+     char c = static_cast<char>(uart->dr & 0xff);
+
+     return c;
+}
+char operations::TryReadSerialCharacter()
+{
+     auto* uart = reinterpret_cast<UARTRegisters*>(UART0_BASE + 0xffff'8000'0000'0000);
+
+     if (uart->fr & (1u << 4)) return 0;
      return static_cast<char>(uart->dr & 0xFF);
 }
 

@@ -60,6 +60,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(utilities PRIVATE
         -fno-exceptions
         -fno-rtti
+        -fno-sanitize=all
         -D_GLIBCXX_DEBUG=0
         -D_GLIBCXX_ASSERTIONS=0
         -D_LIBCPP_ENABLE_ASSERTIONS=0

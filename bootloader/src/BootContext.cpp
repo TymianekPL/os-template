@@ -242,11 +242,8 @@ namespace bootloader
                EFI_MEMORY_DESCRIPTOR* desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
                    reinterpret_cast<std::byte*>(memoryMap) + (i * descriptorSize));
 
-               if (desc->Type != EfiReservedMemoryType && desc->Type != EfiUnusableMemory)
-               {
-                    std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
-                    this->_maxPhysicalAddress = std::max(this->_maxPhysicalAddress, endAddress);
-               }
+               std::uintptr_t endAddress = desc->PhysicalStart + (desc->NumberOfPages * 0x1000);
+               this->_maxPhysicalAddress = std::max(this->_maxPhysicalAddress, endAddress);
 
                if (desc->Type == EfiACPIReclaimMemory || desc->Type == EfiACPIMemoryNVS ||
                    desc->Type == EfiMemoryMappedIO || desc->Type == EfiMemoryMappedIOPortSpace ||
