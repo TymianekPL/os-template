@@ -4,6 +4,7 @@ add_executable(Kernel
     src/process.cpp
     src/memory/pallocator.cpp
     src/memory/vallocator.cpp
+    src/cpu/interrupts.cpp
     src/crtstub.cpp
 )
 set(KERNEL_IMAGE "kernel")
@@ -59,6 +60,7 @@ if(MSVC)
     
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(Kernel PRIVATE
+        -fno-sanitize=all
         -ffreestanding
         -fno-stack-protector
         -fno-stack-check
@@ -93,6 +95,8 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -shared
         -Wl,/subsystem:NATIVE
         -Wl,/ENTRY:KiStartup
+        -Wl,/guard:no
+        -Wl,/CETCOMPAT:NO
     )
     
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)

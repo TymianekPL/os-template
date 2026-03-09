@@ -7,6 +7,8 @@
 
 #ifdef ARCH_X8664 // x86-64 vvv
 
+extern "C" void ReloadCSCode();
+
 namespace cpu
 {
 #pragma pack(push, 1)
@@ -115,7 +117,9 @@ namespace cpu
           sIdt[index].reserved = 0;
      }
 
-     extern "C" void DummyInterruptHandler();
+     using InterruptRoutine = void (*)();
+
+     extern "C" InterruptRoutine KiInterruptVectorTable[256];
      extern "C" void LoadTaskRegister(std::uint16_t selector);
 
      void Initialise()
@@ -145,7 +149,7 @@ namespace cpu
 
           for (std::size_t i = 0; i < 256; ++i)
           {
-               SetIdtEntry(i, reinterpret_cast<std::uintptr_t>(DummyInterruptHandler), 0x08, 0, 0x8E);
+               SetIdtEntry(i, reinterpret_cast<std::uintptr_t>(KiInterruptVectorTable[i]), 0x08, 0, 0x8E);
           }
 
           Idtr idtr{};
@@ -162,6 +166,29 @@ namespace cpu
           LoadTaskRegister(0);
 #else
           asm volatile("ltr %w0" : : "r"(static_cast<std::uint16_t>(0)));
+#endif
+
+#ifdef COMPILER_MSVC
+          ReloadCSCode();
+#else
+          asm volatile("pushq $0x08\n"
+                       "lea 1f(%%rip), %%rax\n"
+                       "push %%rax\n"
+                       "lretq\n"
+                       "1:\n"
+                       :
+                       :
+                       : "rax");
+
+          asm volatile("mov $0x10, %%ax\n"
+                       "mov %%ax, %%ds\n"
+                       "mov %%ax, %%es\n"
+                       "mov %%ax, %%ss\n"
+                       "mov %%ax, %%fs\n"
+                       "mov %%ax, %%gs\n"
+                       :
+                       :
+                       : "ax");
 #endif
      }
 
@@ -284,7 +311,6 @@ namespace cpu
           sIdt[index].typeAttr = typeAttr;
      }
 
-     extern "C" void DummyInterruptHandler();
      extern "C" void LoadTaskRegister(std::uint16_t selector);
 
      void Initialise()
@@ -356,7 +382,7 @@ namespace cpu
 
 namespace cpu
 {
-     extern "C" void ExceptionVectorTable();
+     extern "C" void* ExceptionVectorTable[];
 
      void Initialise()
      {
@@ -370,14 +396,12 @@ namespace cpu
 
           std::uint64_t cpacr = 0x3 << 20;
 #ifdef COMPILER_MSVC
-          ::_WriteStatusReg(ARM64_SYSREG(3, 0, 1, 0, 2), cpacr);
-#else
-          asm volatile("msr cpacr_el1, %0" : : "r"(cpacr));
-#endif
-
-#ifdef COMPILER_MSVC
+          ::_WriteStatusReg(ARM64_SYSREG(3, 0, 12, 0, 0), vbar);     // VBAR_EL1
+          ::_WriteStatusReg(ARM64_SYSREG(3, 0, 1, 0, 2), 0x3 << 20); // CPACR_EL1
           ::__isb(_ARM64_BARRIER_SY);
 #else
+          asm volatile("msr vbar_el1, %0" : : "r"(vbar));
+          asm volatile("msr cpacr_el1, %0" : : "r"(0x3uz << 20));
           asm volatile("isb");
 #endif
      }

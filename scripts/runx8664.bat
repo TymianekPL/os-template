@@ -85,8 +85,10 @@ qemu-system-x86_64.exe ^
      -m 512M ^
      -net none ^
      -vga std ^
-     -serial stdio -M q35 -d int -D qemu.txt -no-reboot -no-shutdown ^
-     -monitor tcp:127.0.0.1:4445,server,nowait
+     -serial stdio -M q35 -no-reboot -no-shutdown ^
+     -monitor tcp:127.0.0.1:4445,server,nowait ^
+     -cpu max,+avx,+avx2,+xsave,+xsaveopt,migratable=no,monitor=on -overcommit cpu-pm=on ^
+     -rtc base=utc,clock=rt
 
 echo.
 echo QEMU session ended.

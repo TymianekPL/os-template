@@ -12,6 +12,7 @@ namespace operations
      void Halt();
      void WriteSerialCharacter(char value);
      char ReadSerialCharacter();
+     char TryReadSerialCharacter();
      template <int = 0> void WriteSerialString(const char* value)
      {
           while (value[0] != 0) WriteSerialCharacter(*value++);
