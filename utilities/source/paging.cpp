@@ -5,6 +5,7 @@
 #include <immintrin.h>
 #if defined(COMPILER_MSVC)
 #include <intrin.h>
+#include <memory>
 #endif
 #elifdef ARCH_ARM64
 #include <arm_neon.h>
