@@ -56,6 +56,7 @@ add_executable(Bootloader
     src/FileLoader.cpp
     src/ImageLoader.cpp
     src/BootContext.cpp
+    src/crtstub.cpp
 )
 
 target_include_directories(Bootloader PRIVATE ${UEFI_INCLUDES})

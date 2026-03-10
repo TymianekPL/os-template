@@ -662,6 +662,7 @@ struct ARM64InterruptFrame : cpu::IInterruptFrame // NOLINT
           debugging::DbgWrite(u8"vec {}\r\n", reinterpret_cast<void*>(frame->vector));
           debugging::DbgWrite(u8"esr {}\r\n", reinterpret_cast<void*>(frame->esr));
           debugging::DbgWrite(u8"far {}\r\n", reinterpret_cast<void*>(frame->far));
+          debugging::DbgWrite(u8" sp {}\r\n", reinterpret_cast<void*>(frame->sp));
           if (frame->vector == 0x15) debugging::DbgWrite(u8"SVC {}\r\n", frame->svc);
      }
 };

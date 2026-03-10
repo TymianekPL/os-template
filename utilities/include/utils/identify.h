@@ -44,6 +44,15 @@
 #define AARCHITECTURE "unknown"
 #define WARCHITECTURE L"unknown"
 #endif
+
+#ifdef COMPILER_MSVC
+#define DLLEXPORT __declspec(dllexport)
+#define DLLIMPORT __declspec(dllimport)
+#elifdef COMPILER_CLANG
+#define DLLEXPORT __declspec(dllexport)
+#define DLLIMPORT __declspec(dllimport)
+#endif
+
 constexpr auto AConfiguration = std::string_view{ACOMPILER " " AARCHITECTURE};
 constexpr auto WConfiguration = std::wstring_view{WCOMPILER L" " WARCHITECTURE};
 

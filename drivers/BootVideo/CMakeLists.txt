@@ -1,15 +1,6 @@
-add_executable(Kernel
-    src/main.cpp
-    src/kinit.cpp
-    src/process.cpp
-    src/memory/pallocator.cpp
-    src/memory/vallocator.cpp
-    src/cpu/interrupts.cpp
-    src/crtstub.cpp
-)
-set(KERNEL_IMAGE "kernel")
-
-target_link_libraries(Kernel PRIVATE utilities BootVideo)
+add_library(BootVideo SHARED src/main.cpp)
+target_include_directories(BootVideo PUBLIC include)
+target_link_libraries(BootVideo PRIVATE utilities)
 
 if(MSVC)
     # Remove runtime checks added by CMake in Debug mode
@@ -28,7 +19,7 @@ if(MSVC)
     string(REPLACE "/MTd" "/MT" CMAKE_CXX_FLAGS_DEBUG
         "${CMAKE_CXX_FLAGS_DEBUG}")
     
-    target_compile_options(Kernel PRIVATE
+    target_compile_options(BootVideo PRIVATE
         /GS-
         /Oi
         /GL-
@@ -45,21 +36,21 @@ if(MSVC)
         /D_MSVC_STL_HARDENING=0
     )
     
-    target_link_options(Kernel PRIVATE
+    target_link_options(BootVideo PRIVATE
         /SUBSYSTEM:NATIVE
-        /ENTRY:KiStartup
+        /NOENTRY
         /NODEFAULTLIB
         /DLL
     )
     
-    set_target_properties(Kernel PROPERTIES
-        OUTPUT_NAME "kernel"
-        SUFFIX ".exe"
+    set_target_properties(BootVideo PROPERTIES
+        OUTPUT_NAME "BootVideo"
+        SUFFIX ".dll"
         LINK_FLAGS "/SUBSYSTEM:NATIVE"
     )
     
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(Kernel PRIVATE
+    target_compile_options(BootVideo PRIVATE
         -fno-sanitize=all
         -ffreestanding
         -fno-stack-protector
@@ -80,44 +71,26 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
     
     if(EFI_ARCH STREQUAL "X64")
-        target_compile_options(Kernel PRIVATE -m64 -mno-red-zone)
-        target_link_options(Kernel PRIVATE -m64)
+        target_compile_options(BootVideo PRIVATE -m64 -mno-red-zone)
+        target_link_options(BootVideo PRIVATE -m64)
     elseif(EFI_ARCH STREQUAL "IA32")
-        target_compile_options(Kernel PRIVATE -m32 -mno-red-zone)
-        target_link_options(Kernel PRIVATE -m32)
+        target_compile_options(BootVideo PRIVATE -m32 -mno-red-zone)
+        target_link_options(BootVideo PRIVATE -m32)
     elseif(EFI_ARCH STREQUAL "AA64")
         # ARM64 specific options
     endif()
     
-    target_link_options(Kernel PRIVATE
+    target_link_options(BootVideo PRIVATE
         -nostdlib
         -Wl,-dll
         -shared
         -Wl,/subsystem:NATIVE
-        -Wl,/ENTRY:KiStartup
+        -Wl,/NOENTRY
         -Wl,/guard:no
         -Wl,/CETCOMPAT:NO
     )
     
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
-        target_link_options(Kernel PRIVATE -Xlinker /SAFESEH:NO)
+        target_link_options(BootVideo PRIVATE -Xlinker /SAFESEH:NO)
     endif()
-
-    
-    set_target_properties(Kernel PROPERTIES
-        OUTPUT_NAME ${KERNEL_IMAGE}
-        SUFFIX ".exe"
-    )
 endif()
-
-set_target_properties(Kernel PROPERTIES
-    POSITION_INDEPENDENT_CODE OFF
-)
-execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-        ${CMAKE_BINARY_DIR}/compile_commands.json
-        ${CMAKE_SOURCE_DIR}/compile_commands.json
-    RESULT_VARIABLE _symlink_result
-    ERROR_QUIET
-)
-
-message(STATUS "Building the kernel: ${KERNEL_IMAGE}.exe")

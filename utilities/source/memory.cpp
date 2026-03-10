@@ -577,3 +577,33 @@ extern "C" int __cdecl memcmp(_In_reads_bytes_(_Size) const void* _Buf1, _In_rea
 }
 
 #endif
+#pragma function(strlen)
+_Check_return_ std::size_t __cdecl strlen(_In_z_ const char* _Str)
+{
+     constexpr auto k = sizeof(std::uintptr_t);
+     constexpr std::uintptr_t HIMAGIC = std::uintptr_t{0x8080808080808080ull};
+     constexpr std::uintptr_t LOMAGIC = std::uintptr_t{0x0101010101010101ull};
+
+     const char* ptr = _Str;
+
+     while (reinterpret_cast<std::uintptr_t>(ptr) % k != 0)
+     {
+          if (*ptr == '\0') return static_cast<std::size_t>(ptr - _Str);
+          ++ptr;
+     }
+
+     const auto* wordPtr = reinterpret_cast<const std::uintptr_t*>(ptr);
+     for (;; ++wordPtr)
+     {
+          const std::uintptr_t w = *wordPtr;
+
+          if ((w - LOMAGIC) & ~w & HIMAGIC)
+          {
+               ptr = reinterpret_cast<const char*>(wordPtr);
+               for (int i = 0; i < static_cast<int>(k); ++i)
+               {
+                    if (ptr[i] == '\0') return static_cast<std::size_t>(ptr + i - _Str);
+               }
+          }
+     }
+}
