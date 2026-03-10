@@ -1,6 +1,432 @@
 #include <utils/identify.h>
 #include <utils/memory.h>
 
+#if defined(ARCH_X8664)
+#include <immintrin.h>
+#if defined(COMPILER_MSVC)
+#include <intrin.h>
+#endif
+#elifdef ARCH_ARM64
+#include <arm_neon.h>
+#endif
+
+#ifdef ARCH_X8664
+
+inline void ZeroPage(void* ptr) noexcept
+{
+#if defined(COMPILER_CLANG)
+     asm volatile("pxor %%xmm0, %%xmm0          \n\t"
+                  "movntdq %%xmm0,    0(%[p])   \n\t"
+                  "movntdq %%xmm0,   16(%[p])   \n\t"
+                  "movntdq %%xmm0,   32(%[p])   \n\t"
+                  "movntdq %%xmm0,   48(%[p])   \n\t"
+                  "movntdq %%xmm0,   64(%[p])   \n\t"
+                  "movntdq %%xmm0,   80(%[p])   \n\t"
+                  "movntdq %%xmm0,   96(%[p])   \n\t"
+                  "movntdq %%xmm0,  112(%[p])   \n\t"
+                  "movntdq %%xmm0,  128(%[p])   \n\t"
+                  "movntdq %%xmm0,  144(%[p])   \n\t"
+                  "movntdq %%xmm0,  160(%[p])   \n\t"
+                  "movntdq %%xmm0,  176(%[p])   \n\t"
+                  "movntdq %%xmm0,  192(%[p])   \n\t"
+                  "movntdq %%xmm0,  208(%[p])   \n\t"
+                  "movntdq %%xmm0,  224(%[p])   \n\t"
+                  "movntdq %%xmm0,  240(%[p])   \n\t"
+                  "movntdq %%xmm0,  256(%[p])   \n\t"
+                  "movntdq %%xmm0,  272(%[p])   \n\t"
+                  "movntdq %%xmm0,  288(%[p])   \n\t"
+                  "movntdq %%xmm0,  304(%[p])   \n\t"
+                  "movntdq %%xmm0,  320(%[p])   \n\t"
+                  "movntdq %%xmm0,  336(%[p])   \n\t"
+                  "movntdq %%xmm0,  352(%[p])   \n\t"
+                  "movntdq %%xmm0,  368(%[p])   \n\t"
+                  "movntdq %%xmm0,  384(%[p])   \n\t"
+                  "movntdq %%xmm0,  400(%[p])   \n\t"
+                  "movntdq %%xmm0,  416(%[p])   \n\t"
+                  "movntdq %%xmm0,  432(%[p])   \n\t"
+                  "movntdq %%xmm0,  448(%[p])   \n\t"
+                  "movntdq %%xmm0,  464(%[p])   \n\t"
+                  "movntdq %%xmm0,  480(%[p])   \n\t"
+                  "movntdq %%xmm0,  496(%[p])   \n\t"
+                  "movntdq %%xmm0,  512(%[p])   \n\t"
+                  "movntdq %%xmm0,  528(%[p])   \n\t"
+                  "movntdq %%xmm0,  544(%[p])   \n\t"
+                  "movntdq %%xmm0,  560(%[p])   \n\t"
+                  "movntdq %%xmm0,  576(%[p])   \n\t"
+                  "movntdq %%xmm0,  592(%[p])   \n\t"
+                  "movntdq %%xmm0,  608(%[p])   \n\t"
+                  "movntdq %%xmm0,  624(%[p])   \n\t"
+                  "movntdq %%xmm0,  640(%[p])   \n\t"
+                  "movntdq %%xmm0,  656(%[p])   \n\t"
+                  "movntdq %%xmm0,  672(%[p])   \n\t"
+                  "movntdq %%xmm0,  688(%[p])   \n\t"
+                  "movntdq %%xmm0,  704(%[p])   \n\t"
+                  "movntdq %%xmm0,  720(%[p])   \n\t"
+                  "movntdq %%xmm0,  736(%[p])   \n\t"
+                  "movntdq %%xmm0,  752(%[p])   \n\t"
+                  "movntdq %%xmm0,  768(%[p])   \n\t"
+                  "movntdq %%xmm0,  784(%[p])   \n\t"
+                  "movntdq %%xmm0,  800(%[p])   \n\t"
+                  "movntdq %%xmm0,  816(%[p])   \n\t"
+                  "movntdq %%xmm0,  832(%[p])   \n\t"
+                  "movntdq %%xmm0,  848(%[p])   \n\t"
+                  "movntdq %%xmm0,  864(%[p])   \n\t"
+                  "movntdq %%xmm0,  880(%[p])   \n\t"
+                  "movntdq %%xmm0,  896(%[p])   \n\t"
+                  "movntdq %%xmm0,  912(%[p])   \n\t"
+                  "movntdq %%xmm0,  928(%[p])   \n\t"
+                  "movntdq %%xmm0,  944(%[p])   \n\t"
+                  "movntdq %%xmm0,  960(%[p])   \n\t"
+                  "movntdq %%xmm0,  976(%[p])   \n\t"
+                  "movntdq %%xmm0,  992(%[p])   \n\t"
+                  "movntdq %%xmm0, 1008(%[p])   \n\t"
+                  "movntdq %%xmm0, 1024(%[p])   \n\t"
+                  "movntdq %%xmm0, 1040(%[p])   \n\t"
+                  "movntdq %%xmm0, 1056(%[p])   \n\t"
+                  "movntdq %%xmm0, 1072(%[p])   \n\t"
+                  "movntdq %%xmm0, 1088(%[p])   \n\t"
+                  "movntdq %%xmm0, 1104(%[p])   \n\t"
+                  "movntdq %%xmm0, 1120(%[p])   \n\t"
+                  "movntdq %%xmm0, 1136(%[p])   \n\t"
+                  "movntdq %%xmm0, 1152(%[p])   \n\t"
+                  "movntdq %%xmm0, 1168(%[p])   \n\t"
+                  "movntdq %%xmm0, 1184(%[p])   \n\t"
+                  "movntdq %%xmm0, 1200(%[p])   \n\t"
+                  "movntdq %%xmm0, 1216(%[p])   \n\t"
+                  "movntdq %%xmm0, 1232(%[p])   \n\t"
+                  "movntdq %%xmm0, 1248(%[p])   \n\t"
+                  "movntdq %%xmm0, 1264(%[p])   \n\t"
+                  "movntdq %%xmm0, 1280(%[p])   \n\t"
+                  "movntdq %%xmm0, 1296(%[p])   \n\t"
+                  "movntdq %%xmm0, 1312(%[p])   \n\t"
+                  "movntdq %%xmm0, 1328(%[p])   \n\t"
+                  "movntdq %%xmm0, 1344(%[p])   \n\t"
+                  "movntdq %%xmm0, 1360(%[p])   \n\t"
+                  "movntdq %%xmm0, 1376(%[p])   \n\t"
+                  "movntdq %%xmm0, 1392(%[p])   \n\t"
+                  "movntdq %%xmm0, 1408(%[p])   \n\t"
+                  "movntdq %%xmm0, 1424(%[p])   \n\t"
+                  "movntdq %%xmm0, 1440(%[p])   \n\t"
+                  "movntdq %%xmm0, 1456(%[p])   \n\t"
+                  "movntdq %%xmm0, 1472(%[p])   \n\t"
+                  "movntdq %%xmm0, 1488(%[p])   \n\t"
+                  "movntdq %%xmm0, 1504(%[p])   \n\t"
+                  "movntdq %%xmm0, 1520(%[p])   \n\t"
+                  "movntdq %%xmm0, 1536(%[p])   \n\t"
+                  "movntdq %%xmm0, 1552(%[p])   \n\t"
+                  "movntdq %%xmm0, 1568(%[p])   \n\t"
+                  "movntdq %%xmm0, 1584(%[p])   \n\t"
+                  "movntdq %%xmm0, 1600(%[p])   \n\t"
+                  "movntdq %%xmm0, 1616(%[p])   \n\t"
+                  "movntdq %%xmm0, 1632(%[p])   \n\t"
+                  "movntdq %%xmm0, 1648(%[p])   \n\t"
+                  "movntdq %%xmm0, 1664(%[p])   \n\t"
+                  "movntdq %%xmm0, 1680(%[p])   \n\t"
+                  "movntdq %%xmm0, 1696(%[p])   \n\t"
+                  "movntdq %%xmm0, 1712(%[p])   \n\t"
+                  "movntdq %%xmm0, 1728(%[p])   \n\t"
+                  "movntdq %%xmm0, 1744(%[p])   \n\t"
+                  "movntdq %%xmm0, 1760(%[p])   \n\t"
+                  "movntdq %%xmm0, 1776(%[p])   \n\t"
+                  "movntdq %%xmm0, 1792(%[p])   \n\t"
+                  "movntdq %%xmm0, 1808(%[p])   \n\t"
+                  "movntdq %%xmm0, 1824(%[p])   \n\t"
+                  "movntdq %%xmm0, 1840(%[p])   \n\t"
+                  "movntdq %%xmm0, 1856(%[p])   \n\t"
+                  "movntdq %%xmm0, 1872(%[p])   \n\t"
+                  "movntdq %%xmm0, 1888(%[p])   \n\t"
+                  "movntdq %%xmm0, 1904(%[p])   \n\t"
+                  "movntdq %%xmm0, 1920(%[p])   \n\t"
+                  "movntdq %%xmm0, 1936(%[p])   \n\t"
+                  "movntdq %%xmm0, 1952(%[p])   \n\t"
+                  "movntdq %%xmm0, 1968(%[p])   \n\t"
+                  "movntdq %%xmm0, 1984(%[p])   \n\t"
+                  "movntdq %%xmm0, 2000(%[p])   \n\t"
+                  "movntdq %%xmm0, 2016(%[p])   \n\t"
+                  "movntdq %%xmm0, 2032(%[p])   \n\t"
+                  "movntdq %%xmm0, 2048(%[p])   \n\t"
+                  "movntdq %%xmm0, 2064(%[p])   \n\t"
+                  "movntdq %%xmm0, 2080(%[p])   \n\t"
+                  "movntdq %%xmm0, 2096(%[p])   \n\t"
+                  "movntdq %%xmm0, 2112(%[p])   \n\t"
+                  "movntdq %%xmm0, 2128(%[p])   \n\t"
+                  "movntdq %%xmm0, 2144(%[p])   \n\t"
+                  "movntdq %%xmm0, 2160(%[p])   \n\t"
+                  "movntdq %%xmm0, 2176(%[p])   \n\t"
+                  "movntdq %%xmm0, 2192(%[p])   \n\t"
+                  "movntdq %%xmm0, 2208(%[p])   \n\t"
+                  "movntdq %%xmm0, 2224(%[p])   \n\t"
+                  "movntdq %%xmm0, 2240(%[p])   \n\t"
+                  "movntdq %%xmm0, 2256(%[p])   \n\t"
+                  "movntdq %%xmm0, 2272(%[p])   \n\t"
+                  "movntdq %%xmm0, 2288(%[p])   \n\t"
+                  "movntdq %%xmm0, 2304(%[p])   \n\t"
+                  "movntdq %%xmm0, 2320(%[p])   \n\t"
+                  "movntdq %%xmm0, 2336(%[p])   \n\t"
+                  "movntdq %%xmm0, 2352(%[p])   \n\t"
+                  "movntdq %%xmm0, 2368(%[p])   \n\t"
+                  "movntdq %%xmm0, 2384(%[p])   \n\t"
+                  "movntdq %%xmm0, 2400(%[p])   \n\t"
+                  "movntdq %%xmm0, 2416(%[p])   \n\t"
+                  "movntdq %%xmm0, 2432(%[p])   \n\t"
+                  "movntdq %%xmm0, 2448(%[p])   \n\t"
+                  "movntdq %%xmm0, 2464(%[p])   \n\t"
+                  "movntdq %%xmm0, 2480(%[p])   \n\t"
+                  "movntdq %%xmm0, 2496(%[p])   \n\t"
+                  "movntdq %%xmm0, 2512(%[p])   \n\t"
+                  "movntdq %%xmm0, 2528(%[p])   \n\t"
+                  "movntdq %%xmm0, 2544(%[p])   \n\t"
+                  "movntdq %%xmm0, 2560(%[p])   \n\t"
+                  "movntdq %%xmm0, 2576(%[p])   \n\t"
+                  "movntdq %%xmm0, 2592(%[p])   \n\t"
+                  "movntdq %%xmm0, 2608(%[p])   \n\t"
+                  "movntdq %%xmm0, 2624(%[p])   \n\t"
+                  "movntdq %%xmm0, 2640(%[p])   \n\t"
+                  "movntdq %%xmm0, 2656(%[p])   \n\t"
+                  "movntdq %%xmm0, 2672(%[p])   \n\t"
+                  "movntdq %%xmm0, 2688(%[p])   \n\t"
+                  "movntdq %%xmm0, 2704(%[p])   \n\t"
+                  "movntdq %%xmm0, 2720(%[p])   \n\t"
+                  "movntdq %%xmm0, 2736(%[p])   \n\t"
+                  "movntdq %%xmm0, 2752(%[p])   \n\t"
+                  "movntdq %%xmm0, 2768(%[p])   \n\t"
+                  "movntdq %%xmm0, 2784(%[p])   \n\t"
+                  "movntdq %%xmm0, 2800(%[p])   \n\t"
+                  "movntdq %%xmm0, 2816(%[p])   \n\t"
+                  "movntdq %%xmm0, 2832(%[p])   \n\t"
+                  "movntdq %%xmm0, 2848(%[p])   \n\t"
+                  "movntdq %%xmm0, 2864(%[p])   \n\t"
+                  "movntdq %%xmm0, 2880(%[p])   \n\t"
+                  "movntdq %%xmm0, 2896(%[p])   \n\t"
+                  "movntdq %%xmm0, 2912(%[p])   \n\t"
+                  "movntdq %%xmm0, 2928(%[p])   \n\t"
+                  "movntdq %%xmm0, 2944(%[p])   \n\t"
+                  "movntdq %%xmm0, 2960(%[p])   \n\t"
+                  "movntdq %%xmm0, 2976(%[p])   \n\t"
+                  "movntdq %%xmm0, 2992(%[p])   \n\t"
+                  "movntdq %%xmm0, 3008(%[p])   \n\t"
+                  "movntdq %%xmm0, 3024(%[p])   \n\t"
+                  "movntdq %%xmm0, 3040(%[p])   \n\t"
+                  "movntdq %%xmm0, 3056(%[p])   \n\t"
+                  "movntdq %%xmm0, 3072(%[p])   \n\t"
+                  "movntdq %%xmm0, 3088(%[p])   \n\t"
+                  "movntdq %%xmm0, 3104(%[p])   \n\t"
+                  "movntdq %%xmm0, 3120(%[p])   \n\t"
+                  "movntdq %%xmm0, 3136(%[p])   \n\t"
+                  "movntdq %%xmm0, 3152(%[p])   \n\t"
+                  "movntdq %%xmm0, 3168(%[p])   \n\t"
+                  "movntdq %%xmm0, 3184(%[p])   \n\t"
+                  "movntdq %%xmm0, 3200(%[p])   \n\t"
+                  "movntdq %%xmm0, 3216(%[p])   \n\t"
+                  "movntdq %%xmm0, 3232(%[p])   \n\t"
+                  "movntdq %%xmm0, 3248(%[p])   \n\t"
+                  "movntdq %%xmm0, 3264(%[p])   \n\t"
+                  "movntdq %%xmm0, 3280(%[p])   \n\t"
+                  "movntdq %%xmm0, 3296(%[p])   \n\t"
+                  "movntdq %%xmm0, 3312(%[p])   \n\t"
+                  "movntdq %%xmm0, 3328(%[p])   \n\t"
+                  "movntdq %%xmm0, 3344(%[p])   \n\t"
+                  "movntdq %%xmm0, 3360(%[p])   \n\t"
+                  "movntdq %%xmm0, 3376(%[p])   \n\t"
+                  "movntdq %%xmm0, 3392(%[p])   \n\t"
+                  "movntdq %%xmm0, 3408(%[p])   \n\t"
+                  "movntdq %%xmm0, 3424(%[p])   \n\t"
+                  "movntdq %%xmm0, 3440(%[p])   \n\t"
+                  "movntdq %%xmm0, 3456(%[p])   \n\t"
+                  "movntdq %%xmm0, 3472(%[p])   \n\t"
+                  "movntdq %%xmm0, 3488(%[p])   \n\t"
+                  "movntdq %%xmm0, 3504(%[p])   \n\t"
+                  "movntdq %%xmm0, 3520(%[p])   \n\t"
+                  "movntdq %%xmm0, 3536(%[p])   \n\t"
+                  "movntdq %%xmm0, 3552(%[p])   \n\t"
+                  "movntdq %%xmm0, 3568(%[p])   \n\t"
+                  "movntdq %%xmm0, 3584(%[p])   \n\t"
+                  "movntdq %%xmm0, 3600(%[p])   \n\t"
+                  "movntdq %%xmm0, 3616(%[p])   \n\t"
+                  "movntdq %%xmm0, 3632(%[p])   \n\t"
+                  "movntdq %%xmm0, 3648(%[p])   \n\t"
+                  "movntdq %%xmm0, 3664(%[p])   \n\t"
+                  "movntdq %%xmm0, 3680(%[p])   \n\t"
+                  "movntdq %%xmm0, 3696(%[p])   \n\t"
+                  "movntdq %%xmm0, 3712(%[p])   \n\t"
+                  "movntdq %%xmm0, 3728(%[p])   \n\t"
+                  "movntdq %%xmm0, 3744(%[p])   \n\t"
+                  "movntdq %%xmm0, 3760(%[p])   \n\t"
+                  "movntdq %%xmm0, 3776(%[p])   \n\t"
+                  "movntdq %%xmm0, 3792(%[p])   \n\t"
+                  "movntdq %%xmm0, 3808(%[p])   \n\t"
+                  "movntdq %%xmm0, 3824(%[p])   \n\t"
+                  "movntdq %%xmm0, 3840(%[p])   \n\t"
+                  "movntdq %%xmm0, 3856(%[p])   \n\t"
+                  "movntdq %%xmm0, 3872(%[p])   \n\t"
+                  "movntdq %%xmm0, 3888(%[p])   \n\t"
+                  "movntdq %%xmm0, 3904(%[p])   \n\t"
+                  "movntdq %%xmm0, 3920(%[p])   \n\t"
+                  "movntdq %%xmm0, 3936(%[p])   \n\t"
+                  "movntdq %%xmm0, 3952(%[p])   \n\t"
+                  "movntdq %%xmm0, 3968(%[p])   \n\t"
+                  "movntdq %%xmm0, 3984(%[p])   \n\t"
+                  "movntdq %%xmm0, 4000(%[p])   \n\t"
+                  "movntdq %%xmm0, 4016(%[p])   \n\t"
+                  "movntdq %%xmm0, 4032(%[p])   \n\t"
+                  "movntdq %%xmm0, 4048(%[p])   \n\t"
+                  "movntdq %%xmm0, 4064(%[p])   \n\t"
+                  "movntdq %%xmm0, 4080(%[p])   \n\t"
+                  "sfence                        \n\t"
+                  :
+                  : [p] "r"(ptr)
+                  : "memory", "xmm0");
+#elifdef COMPILER_MSVC
+     auto* p = static_cast<__m128i*>(std::assume_aligned<64>(ptr));
+     const __m128i z = _mm_setzero_si128();
+#define ZP_LINE(base)                                                                                                  \
+     _mm_stream_si128(p + (base) + 0, z);                                                                              \
+     _mm_stream_si128(p + (base) + 1, z);                                                                              \
+     _mm_stream_si128(p + (base) + 2, z);                                                                              \
+     _mm_stream_si128(p + (base) + 3, z)
+
+     ZP_LINE(0);
+     ZP_LINE(4);
+     ZP_LINE(8);
+     ZP_LINE(12);
+     ZP_LINE(16);
+     ZP_LINE(20);
+     ZP_LINE(24);
+     ZP_LINE(28);
+     ZP_LINE(32);
+     ZP_LINE(36);
+     ZP_LINE(40);
+     ZP_LINE(44);
+     ZP_LINE(48);
+     ZP_LINE(52);
+     ZP_LINE(56);
+     ZP_LINE(60);
+     ZP_LINE(64);
+     ZP_LINE(68);
+     ZP_LINE(72);
+     ZP_LINE(76);
+     ZP_LINE(80);
+     ZP_LINE(84);
+     ZP_LINE(88);
+     ZP_LINE(92);
+     ZP_LINE(96);
+     ZP_LINE(100);
+     ZP_LINE(104);
+     ZP_LINE(108);
+     ZP_LINE(112);
+     ZP_LINE(116);
+     ZP_LINE(120);
+     ZP_LINE(124);
+     ZP_LINE(128);
+     ZP_LINE(132);
+     ZP_LINE(136);
+     ZP_LINE(140);
+     ZP_LINE(144);
+     ZP_LINE(148);
+     ZP_LINE(152);
+     ZP_LINE(156);
+     ZP_LINE(160);
+     ZP_LINE(164);
+     ZP_LINE(168);
+     ZP_LINE(172);
+     ZP_LINE(176);
+     ZP_LINE(180);
+     ZP_LINE(184);
+     ZP_LINE(188);
+     ZP_LINE(192);
+     ZP_LINE(196);
+     ZP_LINE(200);
+     ZP_LINE(204);
+     ZP_LINE(208);
+     ZP_LINE(212);
+     ZP_LINE(216);
+     ZP_LINE(220);
+     ZP_LINE(224);
+     ZP_LINE(228);
+     ZP_LINE(232);
+     ZP_LINE(236);
+     ZP_LINE(240);
+     ZP_LINE(244);
+     ZP_LINE(248);
+     ZP_LINE(252);
+#undef ZP_LINE
+     _mm_sfence();
+#endif
+}
+
+#elifdef ARCH_ARM64
+
+static std::uint32_t ZpDcZvaBlockSize() noexcept
+{
+#if defined(COMPILER_CLANG)
+     std::uint64_t dczid{};
+     asm volatile("mrs %0, dczid_el0" : "=r"(dczid));
+     if (dczid & (1u << 4)) return 0; // DZP=1: prohibited
+     return 4u << (static_cast<std::uint32_t>(dczid) & 0xFu);
+#elif defined(COMPILER_MSVC)
+     const std::uint64_t dczid = _ReadStatusReg(18);
+     if (dczid & (1u << 4)) return 0;
+     return 4u << (static_cast<std::uint32_t>(dczid) & 0xFu);
+#else
+     return 0;
+#endif
+}
+
+static const std::uint32_t g_dcZvaBlockSize = ZpDcZvaBlockSize();
+
+inline void ZeroPage(void* ptr) noexcept
+{
+     if (g_dcZvaBlockSize != 0)
+     {
+#if defined(COMPILER_CLANG)
+          auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+          const auto end = addr + 4096u;
+          const auto bs = static_cast<std::uintptr_t>(g_dcZvaBlockSize);
+          asm volatile("1:                        \n\t"
+                       "dc  zva, %[a]             \n\t"
+                       "add %[a], %[a], %[bs]     \n\t"
+                       "cmp %[a], %[end]          \n\t"
+                       "b.lo 1b                   \n\t"
+                       : [a] "+r"(addr)
+                       : [end] "r"(end), [bs] "r"(bs)
+                       : "memory");
+          asm volatile("dsb ishst" ::: "memory");
+#elif defined(COMPILER_MSVC)
+          std::memset(ptr, 0, 4096); // honestly, faster than an indirect call anyway...
+#endif
+     }
+     else
+     {
+#if defined(COMPILER_CLANG)
+          auto* p = static_cast<std::uint8_t*>(ptr);
+          const auto* end = p + 4096u;
+          asm volatile("movi v0.16b, #0              \n\t"
+                       "1:                           \n\t"
+                       "stnp q0, q0, [%[p]]          \n\t"
+                       "stnp q0, q0, [%[p], #32]     \n\t"
+                       "add  %[p], %[p], #64         \n\t"
+                       "cmp  %[p], %[end]            \n\t"
+                       "b.lo 1b                      \n\t"
+                       : [p] "+r"(p)
+                       : [end] "r"(end)
+                       : "memory", "v0");
+          asm volatile("dsb ishst" ::: "memory");
+#elif defined(COMPILER_MSVC)
+          auto* p = static_cast<std::uint64_t*>(ptr);
+          const uint64x2_t z = vdupq_n_u64(0);
+          for (int i = 0; i < 64; ++i, p += 8)
+          {
+               vst1q_u64(p, z);
+               vst1q_u64(p + 2, z);
+               vst1q_u64(p + 4, z);
+               vst1q_u64(p + 6, z);
+          }
+          __dmb(_ARM64_BARRIER_ISHST);
+#endif
+     }
+}
+#endif
+
 #if defined(ARCH_ARM64) && defined(COMPILER_MSVC)
 #include <arm64intr.h>
 #include <intrin.h>
@@ -38,7 +464,7 @@ namespace memory::paging
           auto* pml4 = static_cast<X64PageEntry*>(allocator(0x1000));
           if (pml4 == nullptr) return 0;
 
-          for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pml4)[i] = 0; }
+          for (std::size_t i = 0; i < 512; ++i) reinterpret_cast<std::uint64_t*>(pml4)[i] = 0;
 
           return reinterpret_cast<std::uintptr_t>(pml4);
      }
@@ -61,7 +487,7 @@ namespace memory::paging
                {
                     auto* pdpt = static_cast<X64PageEntry*>(allocator(0x1000));
                     if (!pdpt) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pdpt)[i] = 0; }
+                    ZeroPage(pdpt);
 
                     pml4[pml4Index].physicalAddress = (reinterpret_cast<std::uintptr_t>(pdpt) - virtualOffset) >> 12;
                     pml4[pml4Index].present = 1;
@@ -75,7 +501,7 @@ namespace memory::paging
                {
                     auto* pd = static_cast<X64PageEntry*>(allocator(0x1000));
                     if (!pd) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pd)[i] = 0; }
+                    ZeroPage(pd);
 
                     pdpt[pdptIndex].physicalAddress = (reinterpret_cast<std::uintptr_t>(pd) - virtualOffset) >> 12;
                     pdpt[pdptIndex].present = 1;
@@ -89,7 +515,7 @@ namespace memory::paging
                {
                     auto* pt = static_cast<X64PageEntry*>(allocator(0x1000));
                     if (!pt) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(pt)[i] = 0; }
+                    ZeroPage(pt);
 
                     pd[pdIndex].physicalAddress = (reinterpret_cast<std::uintptr_t>(pt) - virtualOffset) >> 12;
                     pd[pdIndex].present = 1;
@@ -446,52 +872,55 @@ namespace memory::paging
 
           for (std::uintptr_t offset = 0; offset < mapping.size; offset += 0x1000)
           {
-               std::uintptr_t vAddr = mapping.virtualAddress + offset;
-               std::uintptr_t pAddr = mapping.physicalAddress + offset;
+               const std::uintptr_t vAddr = mapping.virtualAddress + offset;
+               const std::uintptr_t pAddr = mapping.physicalAddress + offset;
 
-               std::uint64_t l0Index = (vAddr >> 39) & 0x1FF;
-               std::uint64_t l1Index = (vAddr >> 30) & 0x1FF;
-               std::uint64_t l2Index = (vAddr >> 21) & 0x1FF;
-               std::uint64_t l3Index = (vAddr >> 12) & 0x1FF;
+               const std::uint64_t l0Index = (vAddr >> 39) & 0x1FF;
+               const std::uint64_t l1Index = (vAddr >> 30) & 0x1FF;
+               const std::uint64_t l2Index = (vAddr >> 21) & 0x1FF;
+               const std::uint64_t l3Index = (vAddr >> 12) & 0x1FF;
 
                if (!l0[l0Index].valid)
                {
                     auto* l1 = static_cast<ARMPageEntry*>(allocator(0x1000));
                     if (!l1) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(l1)[i] = 0; }
+                    ZeroPage(l1);
 
-                    l0[l0Index].address = reinterpret_cast<std::uintptr_t>(l1) >> 12;
+                    l0[l0Index].address = (reinterpret_cast<std::uintptr_t>(l1) - virtualOffset) >> 12;
                     l0[l0Index].valid = 1;
                     l0[l0Index].table = 1;
                }
 
-               auto* l1 = reinterpret_cast<ARMPageEntry*>(static_cast<std::uintptr_t>(l0[l0Index].address) << 12);
+               auto* l1 = reinterpret_cast<ARMPageEntry*>((static_cast<std::uintptr_t>(l0[l0Index].address) << 12) +
+                                                          virtualOffset);
 
                if (!l1[l1Index].valid)
                {
                     auto* l2 = static_cast<ARMPageEntry*>(allocator(0x1000));
                     if (!l2) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(l2)[i] = 0; }
+                    ZeroPage(l2);
 
-                    l1[l1Index].address = reinterpret_cast<std::uintptr_t>(l2) >> 12;
+                    l1[l1Index].address = (reinterpret_cast<std::uintptr_t>(l2) - virtualOffset) >> 12;
                     l1[l1Index].valid = 1;
                     l1[l1Index].table = 1;
                }
 
-               auto* l2 = reinterpret_cast<ARMPageEntry*>(static_cast<std::uintptr_t>(l1[l1Index].address) << 12);
+               auto* l2 = reinterpret_cast<ARMPageEntry*>((static_cast<std::uintptr_t>(l1[l1Index].address) << 12) +
+                                                          virtualOffset);
 
                if (!l2[l2Index].valid || !l2[l2Index].table)
                {
                     auto* l3 = static_cast<ARMPageEntry*>(allocator(0x1000));
                     if (!l3) return false;
-                    for (std::size_t i = 0; i < 512; ++i) { reinterpret_cast<std::uint64_t*>(l3)[i] = 0; }
+                    ZeroPage(l3);
 
-                    l2[l2Index].address = reinterpret_cast<std::uintptr_t>(l3) >> 12;
+                    l2[l2Index].address = (reinterpret_cast<std::uintptr_t>(l3) - virtualOffset) >> 12;
                     l2[l2Index].valid = 1;
                     l2[l2Index].table = 1;
                }
 
-               auto* l3 = reinterpret_cast<ARMPageEntry*>(static_cast<std::uintptr_t>(l2[l2Index].address) << 12);
+               auto* l3 = reinterpret_cast<ARMPageEntry*>((static_cast<std::uintptr_t>(l2[l2Index].address) << 12) +
+                                                          virtualOffset);
 
                l3[l3Index].address = pAddr >> 12;
                l3[l3Index].valid = 1;

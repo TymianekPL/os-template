@@ -29,5 +29,11 @@ if exist "%BUILD_DIR%\kernel\kernel.exe" (
     copy /Y "%BUILD_DIR%\kernel\kernel.exe" "%GUEST_ROOT%\kernel\kernel.exe" >nul
 )
 
+if exist "%BUILD_DIR%\drivers\BootVideo\BootVideo.dll" (
+    echo [Copying files] Copying BootVideo.dll...
+    if not exist "%GUEST_ROOT%\kernel" mkdir "%GUEST_ROOT%\kernel"
+    copy /Y "%BUILD_DIR%\drivers\BootVideo\BootVideo.dll" "%GUEST_ROOT%\kernel\BootVideo.dll" >nul
+)
+
 echo [Copying files] Complete!
 exit /b 0

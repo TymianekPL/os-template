@@ -45,7 +45,7 @@ namespace bootloader
                std::byte* dest = static_cast<std::byte*>(imageBase) + section.virtualAddress;
                const std::byte* src = imageData.data() + section.pointerToRawData;
 
-               std::uninitialized_copy_n(src, std::max(section.sizeOfRawData, section.virtualSize), dest);
+               std::copy_n(src, section.sizeOfRawData, dest);
           }
      }
 
@@ -83,7 +83,110 @@ namespace bootloader
           }
      }
 
-     void* ImageLoader::LoadImage(std::span<const std::byte> imageData, EFI_STATUS* outStatus)
+     void* ImageLoader::LoadBootVideo(std::span<const std::byte> imageData)
+     {
+          const DosHeader& dosHeader = *reinterpret_cast<const DosHeader*>(imageData.data());
+          const NtHeaders& ntHeader = *reinterpret_cast<const NtHeaders*>(imageData.data() + dosHeader.eLfanew);
+
+          void* imageBase = reinterpret_cast<void*>(ntHeader.optionalHeader.imageBase);
+          const std::size_t imageSize = ntHeader.optionalHeader.sizeOfImage;
+
+          this->_lastStatus = this->_bootServices->AllocatePages(AllocateAnyPages, EfiLoaderCode, imageSize / 4096,
+                                                                 reinterpret_cast<EFI_PHYSICAL_ADDRESS*>(&imageBase));
+
+          std::fill_n(static_cast<std::byte*>(imageBase), imageSize, std::byte{0});
+
+          std::copy_n(imageData.data(), ntHeader.optionalHeader.sizeOfHeaders, static_cast<std::byte*>(imageBase));
+
+          const auto* sectionHeaders =
+              reinterpret_cast<const SectionHeader*>(imageData.data() + dosHeader.eLfanew + sizeof(std::uint32_t) +
+                                                     sizeof(CoffFileHeader) + ntHeader.fileHeader.sizeOfOptionalHeader);
+          MapSections(imageData, imageBase, sectionHeaders, ntHeader.fileHeader.numberOfSections);
+
+          std::uint64_t delta = reinterpret_cast<std::uint64_t>(imageBase) - ntHeader.optionalHeader.imageBase;
+          if (delta) ApplyRelocations(imageBase, ntHeader, delta);
+
+          return imageBase;
+     }
+
+     static void* ResolveExport(void* moduleBase, const char* name, std::uint16_t /*ordinal*/)
+     {
+          if (!moduleBase || !name) return nullptr;
+
+          const auto* dos = static_cast<const DosHeader*>(moduleBase);
+          const auto* nt = reinterpret_cast<const NtHeaders*>(static_cast<const std::byte*>(moduleBase) + dos->eLfanew);
+
+          const DataDirectory& exportDir = nt->optionalHeader.dataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+
+          if (exportDir.virtualAddress == 0) return nullptr;
+
+          const auto* exports = reinterpret_cast<const ImageExportDirectory*>(
+              static_cast<const std::byte*>(moduleBase) + exportDir.virtualAddress);
+
+          const auto* funcRvas = reinterpret_cast<const std::uint32_t*>(static_cast<const std::byte*>(moduleBase) +
+                                                                        exports->addressOfFunctions);
+          const auto* names = reinterpret_cast<const std::uint32_t*>(static_cast<const std::byte*>(moduleBase) +
+                                                                     exports->addressOfNames);
+          const auto* ordinals = reinterpret_cast<const std::uint16_t*>(static_cast<const std::byte*>(moduleBase) +
+                                                                        exports->addressOfNameOrdinals);
+
+          for (std::uint32_t i = 0; i < exports->numberOfNames; ++i)
+          {
+               const char* exportName =
+                   reinterpret_cast<const char*>(static_cast<const std::byte*>(moduleBase) + names[i]);
+
+               if (std::ranges::equal(std::string_view(exportName), std::string_view(name)))
+               {
+                    std::uint16_t funcIndex = ordinals[i];
+                    std::uint32_t rva = funcRvas[funcIndex];
+                    return static_cast<std::byte*>(moduleBase) + rva;
+               }
+          }
+
+          return nullptr; // not found
+     }
+     void ImageLoader::ResolveBootVideoImports(void* imageBase, const NtHeaders& ntHeader, void* bootVideoBase)
+     {
+          const DataDirectory& importDir = ntHeader.optionalHeader.dataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+
+          if (importDir.virtualAddress == 0) return;
+
+          auto* desc =
+              reinterpret_cast<ImageImportDescriptor*>(static_cast<std::byte*>(imageBase) + importDir.virtualAddress);
+
+          while (desc->name)
+          {
+               const char* moduleName = reinterpret_cast<const char*>(static_cast<std::byte*>(imageBase) + desc->name);
+
+               if (!std::ranges::equal(std::string_view(moduleName), std::string_view("BootVideo.dll")))
+               {
+                    ++desc;
+                    continue;
+               }
+
+               auto* thunk = reinterpret_cast<std::uintptr_t*>(static_cast<std::byte*>(imageBase) + desc->firstThunk);
+
+               auto* origThunk =
+                   reinterpret_cast<std::uintptr_t*>(static_cast<std::byte*>(imageBase) + desc->characteristics);
+
+               if (!origThunk) origThunk = thunk;
+
+               for (; *origThunk; ++origThunk, ++thunk)
+               {
+                    auto* import =
+                        reinterpret_cast<ImageImportByName*>(static_cast<std::byte*>(imageBase) + *origThunk);
+
+                    const char* name = reinterpret_cast<const char*>(import->name);
+
+                    void* addr = ResolveExport(bootVideoBase, name, 0);
+                    *thunk = reinterpret_cast<std::uintptr_t>(addr);
+               }
+
+               break;
+          }
+     }
+
+     void* ImageLoader::LoadImage(std::span<const std::byte> imageData, EFI_STATUS* outStatus, void* bootVideoBase)
      {
           if (!ValidateImage(imageData))
           {
@@ -119,6 +222,8 @@ namespace bootloader
 
           std::uint64_t delta = reinterpret_cast<std::uint64_t>(imageBase) - ntHeader.optionalHeader.imageBase;
           if (delta != 0) ApplyRelocations(imageBase, ntHeader, delta);
+
+          ResolveBootVideoImports(imageBase, ntHeader, bootVideoBase);
 
           this->_baseAddress = imageBase;
           this->_imageSize = imageSize;

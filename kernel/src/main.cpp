@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include "BootVideo.h"
 #include "cpu/interrupts.h"
 #include "kinit.h"
 #include "memory/pallocator.h"
@@ -29,7 +30,11 @@ void KiIdleLoop()
           operations::Yield();
           operations::DisableInterrupts();
 
+          // TODO: DPC stuff
+
+          operations::EnableInterrupts();
           operations::Halt();
+          VidExchangeBuffers();
      }
 }
 void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
@@ -350,9 +355,22 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 
      auto framebuffer = param->framebuffer;
      std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
+     std::uint32_t* bbuffer = static_cast<std::uint32_t*>(
+         g_kernelProcess->AllocateVirtualMemory(nullptr, framebuffer.totalSize,
+                                                memory::AllocationFlags::Commit | memory::AllocationFlags::Reserve |
+                                                    memory::AllocationFlags::ImmediatePhysical,
+                                                memory::MemoryProtection::ReadWrite));
+
+     VidInitialise(VdiFrameBuffer{.framebuffer = buffer,
+                                  .width = framebuffer.width,
+                                  .height = framebuffer.height,
+                                  .scalineSize = framebuffer.scanlineSize,
+                                  .optionalBackbuffer = bbuffer});
 
      while (true)
      {
+          VidExchangeBuffers();
+
           std::array<char, 64> lineBuffer{};
           debugging::DbgWrite(u8"> ");
           const auto len = debugging::ReadSerialLine(lineBuffer.data(), lineBuffer.size());
@@ -510,9 +528,11 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
           }
           case 'c':
           {
-               for (std::size_t i = 0; i < param->framebuffer.height; i++)
-                    std::uninitialized_fill_n(buffer + (i * framebuffer.scanlineSize), framebuffer.scanlineSize,
-                                              0x111111);
+               const auto start = KeReadHighResolutionTimer();
+               VidClearScreen(0x1111ff);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
                break;
           }
           case 'i':

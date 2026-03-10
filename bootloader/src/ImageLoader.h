@@ -15,7 +15,7 @@ namespace bootloader
 
           bool ValidateImage(std::span<const std::byte> imageData);
 
-          void* LoadImage(std::span<const std::byte> imageData, EFI_STATUS* outStatus);
+          void* LoadImage(std::span<const std::byte> imageData, EFI_STATUS* outStatus, void* bootVideoBase);
 
           void RelocateToVirtual(std::uintptr_t virtualBase);
 
@@ -23,6 +23,7 @@ namespace bootloader
           [[nodiscard]] void* GetBaseAddress() const noexcept { return this->_baseAddress; }
           [[nodiscard]] std::size_t GetImageSize() const noexcept { return this->_imageSize; }
           [[nodiscard]] EFI_STATUS GetLastStatus() const noexcept { return this->_lastStatus; }
+          void* LoadBootVideo(std::span<const std::byte> imageData);
 
      private:
           EFI_BOOT_SERVICES* _bootServices;
@@ -31,6 +32,7 @@ namespace bootloader
           void* _entryPoint;
           std::size_t _imageSize;
 
+          void ResolveBootVideoImports(void* imageBase, const NtHeaders& ntHeader, void* bootVideoBase);
           void CopyHeaders(std::span<const std::byte> imageData, void* imageBase, std::uint32_t headerSize);
           void MapSections(std::span<const std::byte> imageData, void* imageBase, const SectionHeader* sections,
                            std::uint16_t sectionCount);

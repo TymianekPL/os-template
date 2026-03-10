@@ -155,6 +155,7 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
 
      conOut->OutputString(conOut, L"Loading kernel...\r\n"_16);
      const std::basic_string_view<CHAR16> kernelPath = L"\\kernel\\kernel.exe"_16;
+     const std::basic_string_view<CHAR16> bootvidPath = L"\\kernel\\BootVideo.dll"_16;
 
      EFI_STATUS status = EFI_SUCCESS;
      std::span<std::byte> kernelData = fileLoader.LoadFile(kernelPath, &status);
@@ -162,6 +163,17 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
      if (EFI_ERROR(status) || kernelData.empty())
      {
           conOut->OutputString(conOut, L"Failed to load kernel file, status: "_16);
+          PrintStatus(conOut, status);
+          conOut->OutputString(conOut, L"\r\n"_16);
+          WaitForKeyPress(SystemTable);
+          return status;
+     }
+
+     std::span<std::byte> bootVideoData = fileLoader.LoadFile(bootvidPath, &status);
+
+     if (EFI_ERROR(status) || bootVideoData.empty())
+     {
+          conOut->OutputString(conOut, L"Failed to load BootVideo.dll, status: "_16);
           PrintStatus(conOut, status);
           conOut->OutputString(conOut, L"\r\n"_16);
           WaitForKeyPress(SystemTable);
@@ -178,9 +190,16 @@ extern "C" EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* S
           WaitForKeyPress(SystemTable);
           return EFI_INVALID_PARAMETER;
      }
+     if (!imageLoader.ValidateImage(bootVideoData))
+     {
+          conOut->OutputString(conOut, L"Failed to validate kernel image\r\n"_16);
+          fileLoader.FreeFile(kernelData);
+          WaitForKeyPress(SystemTable);
+          return EFI_INVALID_PARAMETER;
+     }
 
      conOut->OutputString(conOut, L"Loading and relocating kernel image...\r\n"_16);
-     void* imageBase = imageLoader.LoadImage(kernelData, &status);
+     void* imageBase = imageLoader.LoadImage(kernelData, &status, imageLoader.LoadBootVideo(bootVideoData));
 
      fileLoader.FreeFile(kernelData);
      EFI_TIME uefiTime{};

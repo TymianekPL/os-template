@@ -29,6 +29,9 @@ namespace memory
           bool writable{};
           bool userAccessible{};
           bool cacheDisable{};
+          bool executable{};
+
+          std::uint8_t attrIndex{};
      };
 
      namespace paging

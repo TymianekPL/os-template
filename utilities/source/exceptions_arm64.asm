@@ -1,105 +1,10 @@
+
     AREA |.text|, CODE, READONLY, ALIGN=11
 
     IMPORT KeHandleInterruptFrame
 
 KiInterrupt0 proc
-    mov x9, #0
-    b CommonExceptionEntry
-KiInterrupt0 endp
-
-KiInterrupt1 proc
-    mov x9, #1
-    b CommonExceptionEntry
-KiInterrupt1 endp
-
-KiInterrupt2 proc
-    mov x9, #2
-    b CommonExceptionEntry
-KiInterrupt2 endp
-
-KiInterrupt3 proc
-    mov x9, #3
-    b CommonExceptionEntry
-KiInterrupt3 endp
-
-KiInterrupt4 proc
-    mov x9, #4
-    b CommonExceptionEntry
-KiInterrupt4 endp
-
-KiInterrupt5 proc
-    mov x9, #5
-    b CommonExceptionEntry
-KiInterrupt5 endp
-
-KiInterrupt6 proc
-    mov x9, #6
-    b CommonExceptionEntry
-KiInterrupt6 endp
-
-KiInterrupt7 proc
-    mov x9, #7
-    b CommonExceptionEntry
-KiInterrupt7 endp
-
-KiInterrupt8 proc
-    mov x9, #8
-    b CommonExceptionEntry
-KiInterrupt8 endp
-
-KiInterrupt9 proc
-    mov x9, #9
-    b CommonExceptionEntry
-KiInterrupt9 endp
-
-KiInterrupt10 proc
-    mov x9, #10
-    b CommonExceptionEntry
-KiInterrupt10 endp
-
-KiInterrupt11 proc
-    mov x9, #11
-    b CommonExceptionEntry
-KiInterrupt11 endp
-
-KiInterrupt12 proc
-    mov x9, #12
-    b CommonExceptionEntry
-KiInterrupt12 endp
-
-KiInterrupt13 proc
-    mov x9, #13
-    b CommonExceptionEntry
-KiInterrupt13 endp
-
-KiInterrupt14 proc
-    mov x9, #14
-    b CommonExceptionEntry
-KiInterrupt14 endp
-
-KiInterrupt15 proc
-    mov x9, #15
-    b CommonExceptionEntry
-KiInterrupt15 endp
-
-KiInterrupt16 proc
-    mov x9, #16
-    b CommonExceptionEntry
-KiInterrupt16 endp
-
-KiInterrupt17 proc
-    mov x9, #17
-    b CommonExceptionEntry
-KiInterrupt17 endp
-
-KiInterrupt18 proc
-    mov x9, #18
-    b CommonExceptionEntry
-KiInterrupt18 endp
-
-CommonExceptionEntry proc
     sub sp, sp, #(36*8)
-
     stp x0,  x1,  [sp, #0*8]
     stp x2,  x3,  [sp, #2*8]
     stp x4,  x5,  [sp, #4*8]
@@ -116,13 +21,430 @@ CommonExceptionEntry proc
     stp x23, x24, [sp, #23*8]
     stp x25, x26, [sp, #25*8]
     stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x0, #0
+    b CommonExceptionEntry
+KiInterrupt0 endp
 
-    stp fp,  lr,  [sp, #29*8]
+KiInterrupt1 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
 
-    str x9, [sp, #31*8]
-    str x9, [sp, #32*8]
-    str x9, [sp, #33*8]
-    str x9, [sp, #34*8]
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x0, #1
+    b CommonExceptionEntry
+KiInterrupt1 endp
+
+KiInterrupt2 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x0, #2
+    b CommonExceptionEntry
+KiInterrupt2 endp
+
+KiInterrupt3 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x0, #3
+    b CommonExceptionEntry
+KiInterrupt3 endp
+
+KiInterrupt4 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #4
+    b CommonExceptionEntry
+KiInterrupt4 endp
+
+KiInterrupt5 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x0, #5
+    b CommonExceptionEntry
+KiInterrupt5 endp
+
+KiInterrupt6 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #6
+    b CommonExceptionEntry
+KiInterrupt6 endp
+
+KiInterrupt7 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #7
+    b CommonExceptionEntry
+KiInterrupt7 endp
+
+KiInterrupt8 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #8
+    b CommonExceptionEntry
+KiInterrupt8 endp
+
+KiInterrupt9 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #9
+    b CommonExceptionEntry
+KiInterrupt9 endp
+
+KiInterrupt10 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #10
+    b CommonExceptionEntry
+KiInterrupt10 endp
+
+KiInterrupt11 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #11
+    b CommonExceptionEntry
+KiInterrupt11 endp
+
+KiInterrupt12 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #12
+    b CommonExceptionEntry
+KiInterrupt12 endp
+
+KiInterrupt13 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #13
+    b CommonExceptionEntry
+KiInterrupt13 endp
+
+KiInterrupt14 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #14
+    b CommonExceptionEntry
+KiInterrupt14 endp
+
+KiInterrupt15 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #15
+    b CommonExceptionEntry
+KiInterrupt15 endp
+
+KiInterrupt16 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #16
+    b CommonExceptionEntry
+KiInterrupt16 endp
+
+KiInterrupt17 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #17
+    b CommonExceptionEntry
+KiInterrupt17 endp
+
+KiInterrupt18 proc
+    sub sp, sp, #(36*8)
+    stp x0,  x1,  [sp, #0*8]
+    stp x2,  x3,  [sp, #2*8]
+    stp x4,  x5,  [sp, #4*8]
+    stp x6,  x7,  [sp, #6*8]
+    stp x8,  x9,  [sp, #8*8]
+    stp x10, x11, [sp, #10*8]
+    stp x12, x13, [sp, #12*8]
+    stp x14, x15, [sp, #14*8]
+    stp x16, x17, [sp, #16*8]
+    str x18,      [sp, #18*8]
+
+    stp x19, x20, [sp, #19*8]
+    stp x21, x22, [sp, #21*8]
+    stp x23, x24, [sp, #23*8]
+    stp x25, x26, [sp, #25*8]
+    stp x27, x28, [sp, #27*8]
+    stp fp, lr, [sp, #29*8]
+    mov x9, #18
+    b CommonExceptionEntry
+KiInterrupt18 endp
+
+CommonExceptionEntry proc
+    str x0, [sp, #31*8]
+    str x0, [sp, #32*8]
+    str x0, [sp, #33*8]
+    str x0, [sp, #34*8]
 
     mov x9, sp
     add x9, x9, #(36*8)
