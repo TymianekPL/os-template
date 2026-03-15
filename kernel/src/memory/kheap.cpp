@@ -61,15 +61,15 @@ struct PoolReservation
           constexpr std::size_t PAGE = 4096;
           size = AlignUp(size, PAGE);
 
-          while (commitLock.test_and_set(std::memory_order_acquire)) operations::Yield();
+          while (commitLock.test_and_set(std::memory_order::acquire)) operations::Yield();
 
           void* ret = nullptr;
 
           if (committed + size <= reserved)
           {
                std::byte* addr = base + committed;
-               debugging::DbgWrite(u8"[kheap] Committing pool memory at {} ({} bytes)\r\n", static_cast<void*>(addr),
-                                   size);
+               // debugging::DbgWrite(u8"[kheap] Committing pool memory at {} ({} bytes)\r\n", static_cast<void*>(addr),
+               //                     size);
 
                void* result = g_kernelProcess->AllocateVirtualMemory(
                    addr, size, AllocationFlags::Commit | AllocationFlags::ImmediatePhysical,
@@ -88,7 +88,7 @@ struct PoolReservation
                debugging::DbgWrite(u8"[kheap] ERROR: Pool reservation exhausted\r\n");
           }
 
-          commitLock.clear(std::memory_order_release);
+          commitLock.clear(std::memory_order::release);
           return ret;
      }
 };
@@ -104,9 +104,9 @@ struct alignas(64) PoolState
 
      void LockSeg(std::size_t i) noexcept
      {
-          while (segLocks[i].test_and_set(std::memory_order_acquire)) operations::Yield();
+          while (segLocks[i].test_and_set(std::memory_order::acquire)) operations::Yield();
      }
-     void UnlockSeg(std::size_t i) noexcept { segLocks[i].clear(std::memory_order_release); }
+     void UnlockSeg(std::size_t i) noexcept { segLocks[i].clear(std::memory_order::release); }
 };
 
 static PoolState g_nonPagedState{};
@@ -123,12 +123,12 @@ static PoolHeader* BumpCarve(PoolSegment* seg, std::size_t userSize) noexcept
      const std::size_t total = sizeof(PoolHeader) + userSize;
      const std::size_t segBytes = static_cast<std::size_t>(seg->endAddress - seg->startAddress);
 
-     std::size_t offset = seg->bumpOffset.load(std::memory_order_relaxed);
+     std::size_t offset = seg->bumpOffset.load(std::memory_order::relaxed);
      for (;;)
      {
           if (offset + total > segBytes) return nullptr;
-          if (seg->bumpOffset.compare_exchange_weak(offset, offset + total, std::memory_order_relaxed,
-                                                    std::memory_order_relaxed))
+          if (seg->bumpOffset.compare_exchange_weak(offset, offset + total, std::memory_order::relaxed,
+                                                    std::memory_order::relaxed))
                break;
      }
      return reinterpret_cast<PoolHeader*>(seg->startAddress + offset);
@@ -149,10 +149,10 @@ static PoolSegment* GrowPool(PoolType type, std::size_t binIdx, std::size_t actu
      std::size_t hdrEnd = AlignUp(sizeof(PoolSegment), ALIGNMENT);
      seg->startAddress = static_cast<std::byte*>(base) + hdrEnd;
      seg->endAddress = static_cast<std::byte*>(base) + slabSize;
-     seg->bumpOffset.store(0, std::memory_order_relaxed);
+     seg->bumpOffset.store(0, std::memory_order::relaxed);
 
-     debugging::DbgWrite(u8"[kheap] new slab bin={} type={} base={} size={}\r\n", binIdx,
-                         (type == PoolType::NonPaged) ? u8"NP" : u8"PG", base, slabSize);
+     // debugging::DbgWrite(u8"[kheap] new slab bin={} type={} base={} size={}\r\n", binIdx,
+     //                     (type == PoolType::NonPaged) ? u8"NP" : u8"PG", base, slabSize);
 
      PoolState& ps = StateFor(type);
      ps.LockSeg(binIdx);
@@ -199,7 +199,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
           hdr->isAllocated = true;
           hdr->tag = tag;
           void* ret = hdr + 1;
-          debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (free-list)\r\n", binIdx, ret);
+          // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (free-list)\r\n", binIdx, ret);
           return ret;
      }
 
@@ -218,7 +218,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
                hdr->isAllocated = true;
                hdr->lpNextFree = nullptr;
                void* ret = hdr + 1;
-               debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (bump)\r\n", binIdx, ret);
+               // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (bump)\r\n", binIdx, ret);
                return ret;
           }
      }
@@ -245,7 +245,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
      hdr->lpNextFree = nullptr;
 
      void* ret = hdr + 1;
-     debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (new-slab)\r\n", binIdx, ret);
+     // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (new-slab)\r\n", binIdx, ret);
      return ret;
 }
 
@@ -268,7 +268,7 @@ void memory::ExFreePool(void* ptr)
      PoolState& ps = StateFor(hdr->type);
      ps.bins[hdr->binIndex].Push(hdr);
 
-     debugging::DbgWrite(u8"[kheap] free bin={} ptr={}\r\n", static_cast<std::size_t>(hdr->binIndex), ptr);
+     // debugging::DbgWrite(u8"[kheap] free bin={} ptr={}\r\n", static_cast<std::size_t>(hdr->binIndex), ptr);
 }
 
 void memory::ExEnumerateSegments(PoolType type, void (*callback)(void* poolHandle, std::size_t size))
@@ -286,7 +286,7 @@ void memory::ExEnumerateSegments(PoolType type, void (*callback)(void* poolHandl
 void memory::ExEnumeratePool(void* poolHandle, void (*callback)(PoolHeader* header))
 {
      auto* seg = reinterpret_cast<PoolSegment*>(poolHandle);
-     std::size_t carvedBytes = seg->bumpOffset.load(std::memory_order_acquire);
+     std::size_t carvedBytes = seg->bumpOffset.load(std::memory_order::acquire);
      std::byte* cursor = seg->startAddress;
      std::byte* end = seg->startAddress + carvedBytes;
 

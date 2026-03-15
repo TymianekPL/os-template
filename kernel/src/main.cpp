@@ -576,46 +576,78 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
           }
           case 'a':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 64, 'tst1'), 0xcd, 64);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'A':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 64, 'tst2'), 0xcd, 64);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'b':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 4096, 'tst1'), 0xcd, 4096);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'B':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 4096, 'tst2'), 0xcd, 4096);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'c':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 8, 'tst1'), 0xcd,
                            1024uz * 1024uz * 8);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'C':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 8, 'tst2'), 0xcd,
                            1024uz * 1024uz * 8);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'd':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 96, 'tst1'), 0xcd,
                            1024uz * 1024uz * 96);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'D':
           {
+               const auto start = KeReadHighResolutionTimer();
                std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 96, 'tst2'), 0xcd,
                            1024uz * 1024uz * 96);
+               const auto end = KeReadHighResolutionTimer();
+               debugging::DbgWrite(u8"Elapsed {}us\r\n",
+                                   (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
           case 'H':

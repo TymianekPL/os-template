@@ -401,24 +401,24 @@ namespace memory
 
           if (z->entry.state == VADMemoryState::Reserved || z->entry.state == VADMemoryState::Committed)
           {
-               if (this->_stats.totalReservedBytes.load(std::memory_order_relaxed) >= z->entry.size)
-                    this->_stats.totalReservedBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
+               if (this->_stats.totalReservedBytes.load(std::memory_order::relaxed) >= z->entry.size)
+                    this->_stats.totalReservedBytes.fetch_sub(z->entry.size, std::memory_order::relaxed);
           }
 
           if (z->entry.state == VADMemoryState::Committed)
           {
-               if (this->_stats.totalCommittedBytes.load(std::memory_order_relaxed) >= z->entry.size)
-                    this->_stats.totalCommittedBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
-               if (this->_stats.commitCharge.load(std::memory_order_relaxed) >= z->entry.size)
-                    this->_stats.commitCharge.fetch_sub(z->entry.size, std::memory_order_relaxed);
+               if (this->_stats.totalCommittedBytes.load(std::memory_order::relaxed) >= z->entry.size)
+                    this->_stats.totalCommittedBytes.fetch_sub(z->entry.size, std::memory_order::relaxed);
+               if (this->_stats.commitCharge.load(std::memory_order::relaxed) >= z->entry.size)
+                    this->_stats.commitCharge.fetch_sub(z->entry.size, std::memory_order::relaxed);
           }
 
-          if (z->entry.immediatePhysical && _stats.totalImmediateBytes.load(std::memory_order_relaxed) >= z->entry.size)
+          if (z->entry.immediatePhysical && _stats.totalImmediateBytes.load(std::memory_order::relaxed) >= z->entry.size)
           {
-               this->_stats.totalImmediateBytes.fetch_sub(z->entry.size, std::memory_order_relaxed);
+               this->_stats.totalImmediateBytes.fetch_sub(z->entry.size, std::memory_order::relaxed);
           }
 
-          this->_stats.releaseOperations.fetch_add(1, std::memory_order_relaxed);
+          this->_stats.releaseOperations.fetch_add(1, std::memory_order::relaxed);
 
           VADNode* y = z;
           VADNode* x = nullptr;
@@ -538,24 +538,24 @@ namespace memory
           std::uintptr_t baseAddress = FindFreeRegion(size, 0);
           if (baseAddress == 0)
           {
-               _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+               _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
                return 0;
           }
 
           if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use))
           {
-               _stats.reserveOperations.fetch_add(1, std::memory_order_relaxed);
+               _stats.reserveOperations.fetch_add(1, std::memory_order::relaxed);
                const std::size_t newReserved =
-                   _stats.totalReservedBytes.fetch_add(size, std::memory_order_relaxed) + size;
-               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order_relaxed);
+                   _stats.totalReservedBytes.fetch_add(size, std::memory_order::relaxed) + size;
+               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order::relaxed);
                while (newReserved > currentPeak && !_stats.peakReservedBytes.compare_exchange_weak(
-                                                       currentPeak, newReserved, std::memory_order_relaxed))
+                                                       currentPeak, newReserved, std::memory_order::relaxed))
                {
                }
                return baseAddress;
           }
 
-          _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+          _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
           return 0;
      }
 
@@ -565,24 +565,24 @@ namespace memory
           std::uintptr_t baseAddress = FindFreeRegion(size, hint);
           if (baseAddress == 0)
           {
-               _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+               _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
                return 0;
           }
 
           if (ReserveVirtualMemoryFixed(baseAddress, size, protection, use))
           {
-               _stats.reserveOperations.fetch_add(1, std::memory_order_relaxed);
+               _stats.reserveOperations.fetch_add(1, std::memory_order::relaxed);
                const std::size_t newReserved =
-                   _stats.totalReservedBytes.fetch_add(size, std::memory_order_relaxed) + size;
-               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order_relaxed);
+                   _stats.totalReservedBytes.fetch_add(size, std::memory_order::relaxed) + size;
+               std::size_t currentPeak = _stats.peakReservedBytes.load(std::memory_order::relaxed);
                while (newReserved > currentPeak && !_stats.peakReservedBytes.compare_exchange_weak(
-                                                       currentPeak, newReserved, std::memory_order_relaxed))
+                                                       currentPeak, newReserved, std::memory_order::relaxed))
                {
                }
                return baseAddress;
           }
 
-          _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+          _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
           return 0;
      }
 
@@ -597,7 +597,7 @@ namespace memory
                if (physPage == ~0uz)
                {
                     // TODO: roll back previously mapped pages
-                    _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+                    _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
                     debugging::DbgWrite(u8"[MapPhysicalPages] physicalAllocator.AllocatePage == ~0\r\n");
                     return false;
                }
@@ -622,7 +622,7 @@ namespace memory
                if (!memory::paging::MapPage(pageTable, mapping, ptAllocator))
                {
                     physicalAllocator.ReleaseFreePage(physPage);
-                    _stats.failedAllocations.fetch_add(1, std::memory_order_relaxed);
+                    _stats.failedAllocations.fetch_add(1, std::memory_order::relaxed);
                     debugging::DbgWrite(u8"[MapPhysicalPages] !memory::paging::MapPage\r\n");
                     return false;
                }
@@ -796,22 +796,22 @@ namespace memory
                     Insert(VADEntry(spanStart, spanEnd - spanStart, VADMemoryState::Reserved, prot, use, false));
                     return false;
                }
-               _stats.totalImmediateBytes.fetch_add(size, std::memory_order_relaxed);
+               _stats.totalImmediateBytes.fetch_add(size, std::memory_order::relaxed);
                node->entry.immediatePhysical = true;
           }
 
           node->entry.state = VADMemoryState::Committed;
 
-          const std::size_t newCommitted = _stats.totalCommittedBytes.fetch_add(size, std::memory_order_relaxed) + size;
-          _stats.commitCharge.fetch_add(size, std::memory_order_relaxed);
+          const std::size_t newCommitted = _stats.totalCommittedBytes.fetch_add(size, std::memory_order::relaxed) + size;
+          _stats.commitCharge.fetch_add(size, std::memory_order::relaxed);
 
-          std::size_t currentPeak = _stats.peakCommittedBytes.load(std::memory_order_relaxed);
+          std::size_t currentPeak = _stats.peakCommittedBytes.load(std::memory_order::relaxed);
           while (newCommitted > currentPeak &&
-                 !_stats.peakCommittedBytes.compare_exchange_weak(currentPeak, newCommitted, std::memory_order_relaxed))
+                 !_stats.peakCommittedBytes.compare_exchange_weak(currentPeak, newCommitted, std::memory_order::relaxed))
           {
           }
 
-          _stats.commitOperations.fetch_add(1, std::memory_order_relaxed);
+          _stats.commitOperations.fetch_add(1, std::memory_order::relaxed);
           return true;
      }
 
@@ -875,15 +875,15 @@ namespace memory
                          }
                     }
                }
-               this->_stats.totalImmediateBytes.fetch_sub(decommitSize, std::memory_order_relaxed);
+               this->_stats.totalImmediateBytes.fetch_sub(decommitSize, std::memory_order::relaxed);
           }
 
-          if (this->_stats.totalCommittedBytes.load(std::memory_order_relaxed) >= decommitSize)
-               this->_stats.totalCommittedBytes.fetch_sub(decommitSize, std::memory_order_relaxed);
-          if (this->_stats.commitCharge.load(std::memory_order_relaxed) >= decommitSize)
-               this->_stats.commitCharge.fetch_sub(decommitSize, std::memory_order_relaxed);
+          if (this->_stats.totalCommittedBytes.load(std::memory_order::relaxed) >= decommitSize)
+               this->_stats.totalCommittedBytes.fetch_sub(decommitSize, std::memory_order::relaxed);
+          if (this->_stats.commitCharge.load(std::memory_order::relaxed) >= decommitSize)
+               this->_stats.commitCharge.fetch_sub(decommitSize, std::memory_order::relaxed);
 
-          this->_stats.decommitOperations.fetch_add(1, std::memory_order_relaxed);
+          this->_stats.decommitOperations.fetch_add(1, std::memory_order::relaxed);
 
           if (decommitStart == nodeStart && decommitEnd == nodeEnd)
           {

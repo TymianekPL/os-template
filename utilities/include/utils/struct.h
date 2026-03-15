@@ -186,10 +186,10 @@ namespace structures
                SingleListEntry<TNode>* oldHead = nullptr;
                do
                {
-                    oldHead = head.load(std::memory_order_acquire);
+                    oldHead = head.load(std::memory_order::acquire);
                     node->next = oldHead;
                } while (
-                   !head.compare_exchange_weak(oldHead, node, std::memory_order::release, std::memory_order_acquire));
+                   !head.compare_exchange_weak(oldHead, node, std::memory_order::release, std::memory_order::acquire));
           }
 
           SingleListEntry<TNode>* Pop() noexcept
@@ -202,10 +202,10 @@ namespace structures
                     if (oldHead == nullptr) return nullptr;
                     newHead = oldHead->next;
                } while (!head.compare_exchange_weak(oldHead, newHead, std::memory_order::release,
-                                                    std::memory_order_acquire));
+                                                    std::memory_order::acquire));
                return oldHead;
           }
 
-          [[nodiscard]] bool IsEmpty() const noexcept { return head.load(std::memory_order_acquire) == nullptr; }
+          [[nodiscard]] bool IsEmpty() const noexcept { return head.load(std::memory_order::acquire) == nullptr; }
      };
 } // namespace structures

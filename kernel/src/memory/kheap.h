@@ -50,17 +50,17 @@ namespace memory
           static std::uint64_t Tag(std::uint64_t v) noexcept { return v >> TAG_SHIFT; }
           void Push(PoolHeader* block) noexcept
           {
-               std::uint64_t old = head.load(std::memory_order_relaxed);
+               std::uint64_t old = head.load(std::memory_order::relaxed);
                std::uint64_t next{};
                do
                {
                     block->lpNextFree = Ptr(old);
                     next = Pack(block, Tag(old) + 1);
-               } while (!head.compare_exchange_weak(old, next, std::memory_order_release, std::memory_order_relaxed));
+               } while (!head.compare_exchange_weak(old, next, std::memory_order::release, std::memory_order::relaxed));
           }
           PoolHeader* Pop() noexcept
           {
-               std::uint64_t old = head.load(std::memory_order_acquire);
+               std::uint64_t old = head.load(std::memory_order::acquire);
                PoolHeader* top{};
                std::uint64_t next{};
                do
@@ -68,7 +68,7 @@ namespace memory
                     top = Ptr(old);
                     if (!top) return nullptr;
                     next = Pack(top->lpNextFree, Tag(old) + 1);
-               } while (!head.compare_exchange_weak(old, next, std::memory_order_acquire, std::memory_order_relaxed));
+               } while (!head.compare_exchange_weak(old, next, std::memory_order::acquire, std::memory_order::relaxed));
                return top;
           }
      };

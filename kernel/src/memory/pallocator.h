@@ -88,8 +88,8 @@ namespace memory
      private:
           void PushToList(std::atomic<structures::SingleListEntry<PFNEntry*>*>& listHead, std::size_t pfnIndex) const;
           std::size_t PopFromList(std::atomic<structures::SingleListEntry<PFNEntry*>*>& listHead) const;
-          void IncrementUseCounter(PFNUse use, std::memory_order order = std::memory_order_relaxed);
-          void DecrementUseCounter(PFNUse use, std::memory_order order = std::memory_order_relaxed);
+          void IncrementUseCounter(PFNUse use, std::memory_order order = std::memory_order::relaxed);
+          void DecrementUseCounter(PFNUse use, std::memory_order order = std::memory_order::relaxed);
           void MarkExistingPageTablesPreInit();
      };
 
