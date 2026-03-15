@@ -4,6 +4,7 @@
 #include "BootVideo.h"
 #include "cpu/interrupts.h"
 #include "kinit.h"
+#include "memory/kheap.h"
 #include "memory/pallocator.h"
 #include "memory/vallocator.h"
 #include "process.h"
@@ -346,6 +347,8 @@ constexpr const char8_t* FormatSize(std::size_t size, std::size_t& outVal)
      return u8"B";
 }
 
+static std::size_t AlignUp(std::size_t size, std::size_t align) { return (size + align - 1) & ~(align - 1); }
+
 extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 {
      if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
@@ -366,6 +369,8 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                   .height = framebuffer.height,
                                   .scalineSize = framebuffer.scanlineSize,
                                   .optionalBackbuffer = bbuffer});
+
+     memory::KiHeapInitialise();
 
      while (true)
      {
@@ -526,7 +531,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 
                break;
           }
-          case 'c':
+          case 'L':
           {
                const auto start = KeReadHighResolutionTimer();
                VidClearScreen(0x1111ff);
@@ -567,6 +572,156 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                    loFrequency == 0 ? 0 : loCurrent / loFrequency);
                debugging::DbgWrite(u8"High = {} at {}Hz (~{}s)\r\n", hiCurrent, hiFrequency,
                                    hiFrequency == 0 ? 0 : hiCurrent / hiFrequency);
+               break;
+          }
+          case 'a':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 64, 'tst1'), 0xcd, 64);
+          }
+          break;
+          case 'A':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 64, 'tst2'), 0xcd, 64);
+          }
+          break;
+          case 'b':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 4096, 'tst1'), 0xcd, 4096);
+          }
+          break;
+          case 'B':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 4096, 'tst2'), 0xcd, 4096);
+          }
+          break;
+          case 'c':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 8, 'tst1'), 0xcd,
+                           1024uz * 1024uz * 8);
+          }
+          break;
+          case 'C':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 8, 'tst2'), 0xcd,
+                           1024uz * 1024uz * 8);
+          }
+          break;
+          case 'd':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 96, 'tst1'), 0xcd,
+                           1024uz * 1024uz * 96);
+          }
+          break;
+          case 'D':
+          {
+               std::memset(memory::ExAllocatePool(memory::PoolType::NonPaged, 1024uz * 1024uz * 96, 'tst2'), 0xcd,
+                           1024uz * 1024uz * 96);
+          }
+          break;
+          case 'H':
+          {
+               auto printPool = [](memory::PoolType type, const char8_t* label)
+               {
+                    static std::size_t totalSegs{};
+                    static std::size_t totalAlloc{};
+                    static std::size_t totalFree{};
+                    static std::size_t totalCommitted{};
+                    static std::size_t totalUsed{};
+                    totalSegs = totalAlloc = totalFree = totalCommitted = totalUsed = 0;
+
+                    memory::ExEnumerateSegments(type,
+                                                [](void* handle, std::size_t segSize)
+                                                {
+                                                     ++totalSegs;
+                                                     totalCommitted += segSize;
+                                                     memory::ExEnumeratePool(handle,
+                                                                             [](memory::PoolHeader* hdr)
+                                                                             {
+                                                                                  if (hdr->isAllocated)
+                                                                                  {
+                                                                                       ++totalAlloc;
+                                                                                       totalUsed += hdr->size;
+                                                                                  }
+                                                                                  else
+                                                                                       ++totalFree;
+                                                                             });
+                                                });
+
+                    debugging::DbgWrite(u8"\r\n");
+                    debugging::DbgWrite(u8"=== {} ===\r\n", label);
+                    debugging::DbgWrite(u8"  segments  : {}\r\n", totalSegs);
+                    debugging::DbgWrite(u8"  committed : {} bytes\r\n", totalCommitted);
+                    debugging::DbgWrite(u8"  in use    : {} bytes ({} allocs, {} free)\r\n", totalUsed, totalAlloc,
+                                        totalFree);
+
+                    if (!totalSegs)
+                    {
+                         debugging::DbgWrite(u8"  (no segments committed)\r\n");
+                         return;
+                    }
+
+                    memory::ExEnumerateSegments(
+                        type,
+                        [](void* handle, std::size_t segSize)
+                        {
+                             auto* seg = reinterpret_cast<memory::PoolSegment*>(handle);
+
+                             static std::size_t segAlloc{};
+                             static std::size_t segFree{};
+                             static std::size_t segUsed{};
+                             static std::size_t segBlocks{};
+                             static std::size_t binIdx{};
+                             segAlloc = segFree = segUsed = segBlocks = binIdx = 0;
+                             memory::ExEnumeratePool(handle,
+                                                     [](memory::PoolHeader* hdr)
+                                                     {
+                                                          if (segBlocks++ == 0) binIdx = hdr->binIndex;
+                                                          if (hdr->isAllocated)
+                                                          {
+                                                               ++segAlloc;
+                                                               segUsed += hdr->size;
+                                                          }
+                                                          else
+                                                               ++segFree;
+                                                     });
+
+                             const std::size_t usable = static_cast<std::size_t>(seg->endAddress - seg->startAddress);
+                             const std::size_t pct = usable ? segUsed * 100 / usable : 0;
+
+                             debugging::DbgWrite(u8"\r\n");
+                             debugging::DbgWrite(
+                                 u8"  segment {} : bin {} : {} bytes usable : {}% used : {} alloc {} free\r\n", handle,
+                                 binIdx, usable, pct, segAlloc, segFree);
+                             debugging::DbgWrite(u8"\r\n");
+
+                             if (!segBlocks)
+                             {
+                                  debugging::DbgWrite(u8"    (no carved blocks)\r\n");
+                                  return;
+                             }
+
+                             debugging::DbgWrite(
+                                 u8"    header                user ptr              size        tag    state\r\n");
+                             debugging::DbgWrite(
+                                 u8"    --------------------  --------------------  ----------  -----  ---------\r\n");
+
+                             memory::ExEnumeratePool(
+                                 handle,
+                                 [](memory::PoolHeader* hdr)
+                                 {
+                                      char8_t tag[5]{};
+                                      std::memcpy(tag, &hdr->tag, 4);
+                                      const void* userPtr = hdr + 1;
+                                      const char8_t* state = hdr->isAllocated ? u8"ALLOCATED" : u8"free";
+                                      debugging::DbgWrite(u8"    {}    {}    {}          {}   {}\r\n", hdr, userPtr,
+                                                          hdr->size, tag, state);
+                                 });
+                        });
+               };
+
+               printPool(memory::PoolType::NonPaged, u8"Non-paged pool");
+               printPool(memory::PoolType::Paged, u8"Paged pool");
+               debugging::DbgWrite(u8"\r\n");
                break;
           }
           case 'h': // help

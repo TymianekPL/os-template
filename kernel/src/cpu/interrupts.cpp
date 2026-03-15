@@ -7,7 +7,6 @@
 #include "utils/kdbg.h"
 #include "utils/operations.h"
 
-
 std::uint64_t cpu::g_systemBootTimeOffsetSeconds{};
 
 struct RSDPDescriptor
@@ -628,6 +627,7 @@ struct ARM64InterruptFrame : cpu::IInterruptFrame // NOLINT
      [[nodiscard]] std::uint64_t GetInstructionPointer() const override { return frame->lr; }
      [[nodiscard]] std::uint64_t GetStackPointer() const override { return frame->sp; }
      [[nodiscard]] std::uint64_t GetFaultingAddress() const override { return frame->far; }
+     [[nodiscard]] void* GetContext() const override { return this->frame; }
 
      void DumpRegisters() const override
      {
