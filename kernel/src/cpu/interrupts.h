@@ -50,6 +50,7 @@ namespace cpu
           [[nodiscard]] virtual std::uintptr_t GetStackPointer() const = 0;
           [[nodiscard]] virtual std::uintptr_t GetFaultingAddress() const = 0;
           [[nodiscard]] virtual std::uintptr_t GetExtra() const { return GetVector(); };
+          [[nodiscard]] virtual void* GetContext() const { return nullptr; };
 
           virtual void DumpRegisters() const = 0;
      };
