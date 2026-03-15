@@ -1,5 +1,6 @@
 #include <utils/identify.h>
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #define DLL DLLEXPORT
@@ -241,6 +242,49 @@ DLLEXPORT void VidClearScreen(std::uint32_t colour)
      {
           auto* row = g_buffer.framebuffer + (y * stride);
           std::ranges::fill(row, row + g_buffer.width, colour);
+     }
+}
+DLLEXPORT void VidDrawRect(std::uint32_t x, std::uint32_t y, std::uint32_t width, std::uint32_t height,
+                           std::uint32_t colour)
+{
+     for (std::uint32_t j = 0; j < height; ++j)
+     {
+          auto* row = g_buffer.framebuffer + (static_cast<std::size_t>((y + j) * g_buffer.scalineSize)) + x;
+          std::ranges::fill(row, row + width, colour);
+     }
+}
+
+extern "C" const std::uint8_t kFontData[256][16]; // NOLINT
+
+DLLEXPORT void VidDrawChar(std::uint32_t x, std::uint32_t y, char c, std::uint32_t colour, std::uint8_t scale)
+{
+     const auto& glyph = kFontData[static_cast<std::uint8_t>(c)];
+
+     for (std::uint32_t j = 0; j < 16; ++j)
+     {
+          std::uint32_t* rowStart =
+              g_buffer.framebuffer + (static_cast<std::size_t>(y + (j * scale)) * g_buffer.scalineSize) + x;
+
+          for (std::uint32_t sy = 0; sy < scale; ++sy)
+          {
+               std::uint32_t* lpPixel = rowStart + static_cast<std::size_t>(sy * g_buffer.scalineSize);
+
+               if (glyph[j] & 0x80) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x40) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x20) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x10) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x08) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x04) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x02) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+               lpPixel += scale;
+               if (glyph[j] & 0x01) std::ranges::fill(lpPixel, lpPixel + scale, colour);
+          }
      }
 }
 

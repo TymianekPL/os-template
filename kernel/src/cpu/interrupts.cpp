@@ -3,8 +3,10 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include "../dbg/bugcheck.h"
 #include "utils/kdbg.h"
 #include "utils/operations.h"
+
 
 std::uint64_t cpu::g_systemBootTimeOffsetSeconds{};
 
@@ -234,6 +236,7 @@ struct X8664InterruptFrame : cpu::IInterruptFrame // NOLINT
           return addr;
 #endif
      }
+     [[nodiscard]] void* GetContext() const override { return frame; };
 
      void DumpRegisters() const override
      {
@@ -1383,6 +1386,7 @@ void HandleInterrupt(cpu::IInterruptFrame& frame)
      debugging::DbgWrite(u8"Stack   = {}\r\n", reinterpret_cast<void*>(frame.GetStackPointer()));
      debugging::DbgWrite(u8"Address = {}\r\n", reinterpret_cast<void*>(frame.GetFaultingAddress()));
 
+     dbg::KeBugCheck(frame);
      operations::DisableInterrupts();
      while (true) operations::Halt();
 }

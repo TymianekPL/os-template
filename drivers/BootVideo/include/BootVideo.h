@@ -3,7 +3,6 @@
 #include <utils/identify.h>
 #include <cstdint>
 
-
 struct VdiFrameBuffer
 {
      std::uint32_t* framebuffer{};
@@ -21,5 +20,7 @@ DLL void VidInitialise(VdiFrameBuffer buffer);
 DLL void VidClearScreen(std::uint32_t colour);
 DLL void VidExchangeBuffers();
 DLL void VidSetPixel(std::uint32_t x, std::uint32_t y, std::uint32_t colour);
+DLL void VidDrawRect(std::uint32_t x, std::uint32_t y, std::uint32_t width, std::uint32_t height, std::uint32_t colour);
+DLL void VidDrawChar(std::uint32_t x, std::uint32_t y, char c, std::uint32_t colour, std::uint8_t scale);
 
 #undef DLL

@@ -5,6 +5,7 @@ add_executable(Kernel
     src/memory/pallocator.cpp
     src/memory/vallocator.cpp
     src/cpu/interrupts.cpp
+    src/dbg/bugcheck.cpp
     src/crtstub.cpp
 )
 set(KERNEL_IMAGE "kernel")
