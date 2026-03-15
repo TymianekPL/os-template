@@ -170,8 +170,8 @@ namespace memory
                     database[dbIdx].use = PFNUse::PageTable;
                     database[dbIdx].region = PFNRegion::Active;
                     database[dbIdx].referenceCount = 1;
-                    activePages.fetch_add(1, std::memory_order_relaxed);
-                    pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                    activePages.fetch_add(1, std::memory_order::relaxed);
+                    pageTablePages.fetch_add(1, std::memory_order::relaxed);
                }
           }
 
@@ -221,8 +221,8 @@ namespace memory
                          database[dbIdx].use = PFNUse::PageTable;
                          database[dbIdx].region = PFNRegion::Active;
                          database[dbIdx].referenceCount = 1;
-                         activePages.fetch_add(1, std::memory_order_relaxed);
-                         pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                         activePages.fetch_add(1, std::memory_order::relaxed);
+                         pageTablePages.fetch_add(1, std::memory_order::relaxed);
                     }
                }
 
@@ -247,8 +247,8 @@ namespace memory
                               database[dbIdx].use = PFNUse::PageTable;
                               database[dbIdx].region = PFNRegion::Active;
                               database[dbIdx].referenceCount = 1;
-                              activePages.fetch_add(1, std::memory_order_relaxed);
-                              pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                              activePages.fetch_add(1, std::memory_order::relaxed);
+                              pageTablePages.fetch_add(1, std::memory_order::relaxed);
                          }
                     }
 
@@ -273,8 +273,8 @@ namespace memory
                                    database[dbIdx].use = PFNUse::PTE;
                                    database[dbIdx].region = PFNRegion::Active;
                                    database[dbIdx].referenceCount = 1;
-                                   activePages.fetch_add(1, std::memory_order_relaxed);
-                                   ptePages.fetch_add(1, std::memory_order_relaxed);
+                                   activePages.fetch_add(1, std::memory_order::relaxed);
+                                   ptePages.fetch_add(1, std::memory_order::relaxed);
                               }
                          }
                     }
@@ -318,8 +318,8 @@ namespace memory
                          database[dbIdx].use = PFNUse::PageTable;
                          database[dbIdx].region = PFNRegion::Active;
                          database[dbIdx].referenceCount = 1;
-                         activePages.fetch_add(1, std::memory_order_relaxed);
-                         pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                         activePages.fetch_add(1, std::memory_order::relaxed);
+                         pageTablePages.fetch_add(1, std::memory_order::relaxed);
                     }
                }
 
@@ -344,8 +344,8 @@ namespace memory
                               database[dbIdx].use = PFNUse::PTE;
                               database[dbIdx].region = PFNRegion::Active;
                               database[dbIdx].referenceCount = 1;
-                              activePages.fetch_add(1, std::memory_order_relaxed);
-                              ptePages.fetch_add(1, std::memory_order_relaxed);
+                              activePages.fetch_add(1, std::memory_order::relaxed);
+                              ptePages.fetch_add(1, std::memory_order::relaxed);
                          }
                     }
                }
@@ -370,8 +370,8 @@ namespace memory
                          database[dbIdx].use = PFNUse::PageTable;
                          database[dbIdx].region = PFNRegion::Active;
                          database[dbIdx].referenceCount = 1;
-                         activePages.fetch_add(1, std::memory_order_relaxed);
-                         pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                         activePages.fetch_add(1, std::memory_order::relaxed);
+                         pageTablePages.fetch_add(1, std::memory_order::relaxed);
                     }
                }
 
@@ -394,8 +394,8 @@ namespace memory
                               database[dbIdx].use = PFNUse::PageTable;
                               database[dbIdx].region = PFNRegion::Active;
                               database[dbIdx].referenceCount = 1;
-                              activePages.fetch_add(1, std::memory_order_relaxed);
-                              pageTablePages.fetch_add(1, std::memory_order_relaxed);
+                              activePages.fetch_add(1, std::memory_order::relaxed);
+                              pageTablePages.fetch_add(1, std::memory_order::relaxed);
                          }
                     }
 
@@ -418,8 +418,8 @@ namespace memory
                                    database[dbIdx].use = PFNUse::PTE;
                                    database[dbIdx].region = PFNRegion::Active;
                                    database[dbIdx].referenceCount = 1;
-                                   activePages.fetch_add(1, std::memory_order_relaxed);
-                                   ptePages.fetch_add(1, std::memory_order_relaxed);
+                                   activePages.fetch_add(1, std::memory_order::relaxed);
+                                   ptePages.fetch_add(1, std::memory_order::relaxed);
                               }
                          }
                     }
@@ -439,15 +439,15 @@ namespace memory
           PFNRegion oldRegion = database[dbIdx].region;
           PFNUse oldUse = database[dbIdx].use;
 
-          if (oldRegion == PFNRegion::Free) { freePages.fetch_sub(1, std::memory_order_relaxed); }
-          else if (oldRegion == PFNRegion::Zero) { zeroPages.fetch_sub(1, std::memory_order_relaxed); }
-          else if (oldRegion == PFNRegion::Standby) { standbyPages.fetch_sub(1, std::memory_order_relaxed); }
+          if (oldRegion == PFNRegion::Free) { freePages.fetch_sub(1, std::memory_order::relaxed); }
+          else if (oldRegion == PFNRegion::Zero) { zeroPages.fetch_sub(1, std::memory_order::relaxed); }
+          else if (oldRegion == PFNRegion::Standby) { standbyPages.fetch_sub(1, std::memory_order::relaxed); }
 
           database[dbIdx].region = PFNRegion::Active;
           database[dbIdx].use = use;
           database[dbIdx].referenceCount = 1;
 
-          if (oldRegion != PFNRegion::Active) activePages.fetch_add(1, std::memory_order_relaxed);
+          if (oldRegion != PFNRegion::Active) activePages.fetch_add(1, std::memory_order::relaxed);
 
           DecrementUseCounter(oldUse);
           IncrementUseCounter(use);
@@ -482,7 +482,7 @@ namespace memory
 
           DecrementUseCounter(oldUse);
           IncrementUseCounter(use);
-          activePages.fetch_add(1, std::memory_order_relaxed);
+          activePages.fetch_add(1, std::memory_order::relaxed);
 
           return (dbIdx + basePfn) * PageSize;
      }
@@ -491,15 +491,15 @@ namespace memory
      {
           structures::SingleListEntry<PFNEntry*>* node = freeList.Pop();
 
-          if (node != nullptr) freePages.fetch_sub(1, std::memory_order_relaxed);
+          if (node != nullptr) freePages.fetch_sub(1, std::memory_order::relaxed);
           else
           {
                node = zeroList.Pop();
-               if (node != nullptr) zeroPages.fetch_sub(1, std::memory_order_relaxed);
+               if (node != nullptr) zeroPages.fetch_sub(1, std::memory_order::relaxed);
                else
                {
                     node = standbyList.Pop();
-                    if (node != nullptr) standbyPages.fetch_sub(1, std::memory_order_relaxed);
+                    if (node != nullptr) standbyPages.fetch_sub(1, std::memory_order::relaxed);
                     else
                          return ~0;
                }
@@ -514,7 +514,7 @@ namespace memory
 
           DecrementUseCounter(oldUse);
           IncrementUseCounter(use);
-          activePages.fetch_add(1, std::memory_order_relaxed);
+          activePages.fetch_add(1, std::memory_order::relaxed);
 
           return (dbIdx + basePfn) * PageSize;
      }
@@ -536,7 +536,7 @@ namespace memory
                PFNUse oldUse = entry.use;
                PFNRegion oldRegion = entry.region;
 
-               if (oldRegion == PFNRegion::Active) activePages.fetch_sub(1, std::memory_order_relaxed);
+               if (oldRegion == PFNRegion::Active) activePages.fetch_sub(1, std::memory_order::relaxed);
 
                DecrementUseCounter(oldUse);
 
@@ -545,8 +545,8 @@ namespace memory
 
                zeroList.Push(&listNodes[dbIdx]);
 
-               zeroPages.fetch_add(1, std::memory_order_relaxed);
-               unusedPages.fetch_add(1, std::memory_order_relaxed);
+               zeroPages.fetch_add(1, std::memory_order::relaxed);
+               unusedPages.fetch_add(1, std::memory_order::relaxed);
           }
      }
 
@@ -567,7 +567,7 @@ namespace memory
                PFNUse oldUse = entry.use;
                PFNRegion oldRegion = entry.region;
 
-               if (oldRegion == PFNRegion::Active) activePages.fetch_sub(1, std::memory_order_relaxed);
+               if (oldRegion == PFNRegion::Active) activePages.fetch_sub(1, std::memory_order::relaxed);
 
                DecrementUseCounter(oldUse);
 
@@ -576,8 +576,8 @@ namespace memory
 
                freeList.Push(&listNodes[dbIdx]);
 
-               freePages.fetch_add(1, std::memory_order_relaxed);
-               unusedPages.fetch_add(1, std::memory_order_relaxed);
+               freePages.fetch_add(1, std::memory_order::relaxed);
+               unusedPages.fetch_add(1, std::memory_order::relaxed);
           }
      }
 

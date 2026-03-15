@@ -59,14 +59,25 @@ namespace kernel
      void* ProcessControlBlock::AllocateVirtualMemory(void* address, std::size_t size, memory::AllocationFlags flags,
                                                       memory::MemoryProtection protection)
      {
-          if (size == 0) return nullptr;
+          if (size == 0)
+          {
+               debugging::DbgWrite(
+                   u8"[AllocateVirtualMemory] WARNING: Allocating zero bytes with flags {} and protection {}\r\n",
+                   reinterpret_cast<void*>(flags), reinterpret_cast<void*>(protection));
+               return nullptr;
+          }
 
           const bool isReserve = static_cast<std::uint32_t>(flags & memory::AllocationFlags::Reserve) != 0;
           const bool isCommit = static_cast<std::uint32_t>(flags & memory::AllocationFlags::Commit) != 0;
           const bool isReset = static_cast<std::uint32_t>(flags & memory::AllocationFlags::Reset) != 0;
           const bool isImmediate = static_cast<std::uint32_t>(flags & memory::AllocationFlags::ImmediatePhysical) != 0;
 
-          if (!isReserve && !isCommit && !isReset) return nullptr;
+          if (!isReserve && !isCommit && !isReset)
+          {
+               debugging::DbgWrite(u8"[AllocateVirtualMemory] ERROR: No operation specified in flags {}\r\n",
+                                   reinterpret_cast<void*>(flags));
+               return nullptr;
+          }
 
           std::uintptr_t baseAddress = reinterpret_cast<std::uintptr_t>(address);
           std::uintptr_t resultAddress{};
@@ -90,7 +101,13 @@ namespace kernel
                         _vadAllocator.ReserveVirtualMemory(size, protection, memory::PFNUse::ProcessPrivate);
                }
 
-               if (resultAddress == 0) return nullptr;
+               if (resultAddress == 0)
+               {
+                    debugging::DbgWrite(u8"[AllocateVirtualMemory] ERROR: Failed to reserve virtual memory of size {} "
+                                        u8"with protection {}!\r\n",
+                                        size, reinterpret_cast<void*>(protection));
+                    return nullptr;
+               }
 
                if (!isCommit) return reinterpret_cast<void*>(resultAddress);
 
@@ -101,16 +118,34 @@ namespace kernel
                if (baseAddress == 0) return nullptr;
 
                auto* node = _vadAllocator.FindContaining(baseAddress);
-               if (!node) return nullptr;
+               if (!node)
+               {
+                    debugging::DbgWrite(u8"[AllocateVirtualMemory] ERROR: No VAD node contains base address {}!\r\n",
+                                        reinterpret_cast<void*>(baseAddress));
+                    return nullptr;
+               }
 
-               if (node->entry.state != memory::VADMemoryState::Reserved) return nullptr;
+               if (node->entry.state != memory::VADMemoryState::Reserved)
+               {
+                    debugging::DbgWrite(
+                        u8"[AllocateVirtualMemory] ERROR: VAD node state is not Reserved for base address {}!\r\n",
+                        reinterpret_cast<void*>(baseAddress));
+                    return nullptr;
+               }
 
                resultAddress = baseAddress;
           }
 
           if (isCommit || isReset)
           {
-               if (!this->_vadAllocator.CommitMemory(baseAddress, size, isImmediate)) return nullptr;
+               if (!this->_vadAllocator.CommitMemory(baseAddress, size, isImmediate))
+               {
+                    debugging::DbgWrite(
+                        u8"[AllocateVirtualMemory] ERROR: Failed to commit memory at base address {} with size {}!\r\n",
+                        reinterpret_cast<void*>(baseAddress), size);
+                    if (isReserve) this->_vadAllocator.Remove(baseAddress);
+                    return nullptr;
+               }
           }
 
           return reinterpret_cast<void*>(resultAddress);
@@ -138,7 +173,8 @@ namespace kernel
           auto* node = this->_vadAllocator.FindContaining(baseAddress);
           if (!node)
           {
-               debugging::DbgWrite(u8"[ReleaseVirtualMemory] FindContaining()\r\n");
+               debugging::DbgWrite(u8"[ReleaseVirtualMemory] ERROR: No VAD node contains base address {}!\r\n",
+                                   reinterpret_cast<void*>(baseAddress));
                return false;
           }
 
@@ -146,13 +182,13 @@ namespace kernel
           {
                if (baseAddress != node->entry.baseAddress)
                {
-                    debugging::DbgWrite(u8"[ReleaseVirtualMemory] baseAddress != node->entry.baseAddress\r\n");
+                    debugging::DbgWrite(u8"[ReleaseVirtualMemory] ERROR: baseAddress != node->entry.baseAddress\r\n");
                     return false;
                }
 
                if (size != 0 && size != node->entry.size)
                {
-                    debugging::DbgWrite(u8"[ReleaseVirtualMemory] size != 0 && size != node->entry.size\r\n");
+                    debugging::DbgWrite(u8"[ReleaseVirtualMemory] ERROR: size != 0 && size != node->entry.size\r\n");
                     return false;
                }
 
@@ -168,13 +204,13 @@ namespace kernel
                if (baseAddress + decommitSize > node->EndAddress())
                {
                     debugging::DbgWrite(
-                        u8"[ReleaseVirtualMemory] baseAddress + decommitSize > node->EndAddress()!\r\n");
+                        u8"[ReleaseVirtualMemory] ERROR: baseAddress + decommitSize > node->EndAddress()!\r\n");
                     return false;
                }
 
                return this->_vadAllocator.DecommitMemory(baseAddress, decommitSize);
           }
-          debugging::DbgWrite(u8"[ReleaseVirtualMemory] :(\r\n");
+          debugging::DbgWrite(u8"[ReleaseVirtualMemory] ERROR: Unknown error :(\r\n");
           return false;
      }
 

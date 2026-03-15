@@ -151,6 +151,11 @@ namespace memory
           bool SplitVADForDecommit(VADNode* node, std::uintptr_t decommitStart, std::size_t decommitSize);
           void UpdateStatistics();
 
+          bool SplitVADForCommit(VADNode* node, std::uintptr_t commitStart, std::size_t commitSize);
+          bool MapPhysicalPages(VADNode* node, std::uintptr_t baseAddress, std::size_t size);
+
+          void FixDelete(VADNode* x, VADNode* xParent);
+
      public:
           VirtualMemoryAllocator() = default;
           explicit VirtualMemoryAllocator(std::uintptr_t searchStart) : _searchStart(searchStart) {}

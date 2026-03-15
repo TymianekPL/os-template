@@ -4,9 +4,11 @@ add_executable(Kernel
     src/process.cpp
     src/memory/pallocator.cpp
     src/memory/vallocator.cpp
+    src/memory/kheap.cpp
     src/cpu/interrupts.cpp
     src/dbg/bugcheck.cpp
     src/crtstub.cpp
+    src/perf/sysmetrics.cpp
 )
 set(KERNEL_IMAGE "kernel")
 
