@@ -265,13 +265,13 @@ namespace object
           header->bodySize = bodySize;
           header->destructor = destructor;
           header->grantedAccess = access;
-          header->referenceCount.store(1, std::memory_order_relaxed);
+          header->referenceCount.store(1, std::memory_order::relaxed);
           header->nextInBucket = nullptr;
      }
 
      std::int32_t OiReferenceObject(ObjectHeader* header) noexcept
      {
-          return header->referenceCount.fetch_add(1, std::memory_order_relaxed) + 1;
+          return header->referenceCount.fetch_add(1, std::memory_order::relaxed) + 1;
      }
 
      ObjectHeader* OiResolvePath(ObjectHeader* startDir, std::string_view path, OpenFlags flags,
@@ -398,7 +398,7 @@ namespace object
 
      std::int32_t OiDereferenceObject(ObjectHeader* header) noexcept
      {
-          const std::int32_t previous = header->referenceCount.fetch_sub(1, std::memory_order_acq_rel);
+          const std::int32_t previous = header->referenceCount.fetch_sub(1, std::memory_order::acq_rel);
 
           if (previous == 1)
           {

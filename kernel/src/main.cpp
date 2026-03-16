@@ -711,7 +711,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                    }
 
                                    debugging::DbgWrite(u8"  refs={}\r\n",
-                                                       child->referenceCount.load(std::memory_order_relaxed));
+                                                       child->referenceCount.load(std::memory_order::relaxed));
 
                                    if (child->type == object::ObjectType::Directory)
                                    {
@@ -748,7 +748,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
 
                debugging::DbgWrite(u8"\r\nObject Namespace\r\n");
                debugging::DbgWrite(u8"[Directory] \"\\\"  refs={}\r\n",
-                                   object::g_rootDirectoryHeader->referenceCount.load(std::memory_order_relaxed));
+                                   object::g_rootDirectoryHeader->referenceCount.load(std::memory_order::relaxed));
 
                char indent[64]{};
                std::size_t indentLen = 0;
