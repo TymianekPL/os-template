@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include "process.h"
+#include "process/process.h"
 #include "utils/arch.h"
 
 extern std::uint64_t g_bootCycles;

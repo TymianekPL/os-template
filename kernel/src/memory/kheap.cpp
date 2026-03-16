@@ -15,7 +15,7 @@ void operator delete[](void* ptr, [[maybe_unused]] std::size_t size) noexcept { 
 
 using namespace memory;
 
-static std::size_t AlignUp(std::size_t size, std::size_t align) { return (size + align - 1) & ~(align - 1); }
+static constexpr std::size_t AlignUp(std::size_t size, std::size_t align) { return (size + align - 1) & ~(align - 1); }
 
 static std::size_t BinIndex(std::size_t size) noexcept
 {

@@ -213,5 +213,41 @@ namespace kernel
           debugging::DbgWrite(u8"[ReleaseVirtualMemory] ERROR: Unknown error :(\r\n");
           return false;
      }
+     object::Handle ProcessControlBlock::CreateObject(const object::ObjectAttributes& attr) noexcept
+     {
+          return object::ObCreateObject(*this, attr);
+     }
 
+     object::Handle ProcessControlBlock::OpenObject(std::string_view name, object::AccessRights access) noexcept
+     {
+          return object::ObOpenObjectByName(*this, name, access);
+     }
+
+     object::ObjectStatus kernel::ProcessControlBlock::CloseHandle(object::Handle handle) noexcept
+     {
+          return object::ObCloseHandle(*this, handle);
+     }
+
+     object::Handle kernel::ProcessControlBlock::DuplicateHandle(object::Handle src,
+                                                                 object::AccessRights access) noexcept
+     {
+          return object::ObDuplicateHandle(*this, *this, src, access);
+     }
+
+     object::Handle ProcessControlBlock::DuplicateHandleTo(kernel::ProcessControlBlock& dst, object::Handle src,
+                                                           object::AccessRights access) noexcept
+     {
+          return object::ObDuplicateHandle(*this, dst, src, access);
+     }
+
+     object::ObjectHeader* ProcessControlBlock::QueryHandle(object::Handle handle) const noexcept
+     {
+          return object::ObQueryObject(const_cast<ProcessControlBlock&>(*this), handle); // NOLINT
+     }
+
+     object::Handle kernel::ProcessControlBlock::OpenObjectAbsolute(std::string_view path, object::AccessRights access,
+                                                                    object::OpenFlags flags) noexcept
+     {
+          return object::ObOpenObjectByAbsolutePath(*this, path, access, flags);
+     }
 } // namespace kernel

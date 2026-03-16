@@ -7,7 +7,8 @@
 #include "memory/kheap.h"
 #include "memory/pallocator.h"
 #include "memory/vallocator.h"
-#include "process.h"
+#include "object/object.h"
+#include "process/process.h"
 #include "utils/arch.h"
 #include "utils/cpu.h"
 #include "utils/identify.h"
@@ -62,7 +63,7 @@ void KiInitialise(arch::LoaderParameterBlock* param)
                                                         0xffff'8000'0000'0000, param->kernelSize);
      if (!status) Error(buffer, param);
 
-     g_kernelProcess = new (g_kernelProcessStorage) kernel::ProcessControlBlock(0, "System", 0xffff'a000'0000'0000);
+     g_kernelProcess = new (g_kernelProcessStorage) kernel::ProcessControlBlock(0, "System", 0xffff'e000'0000'0000);
      g_kernelProcess->SetState(kernel::ProcessState::Running);
      g_kernelProcess->SetPriority(kernel::ProcessPriority::Realtime);
      g_kernelProcess->SetPageTableBase(memory::paging::GetCurrentPageTable());
@@ -371,6 +372,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                   .optionalBackbuffer = bbuffer});
 
      memory::KiHeapInitialise();
+     object::KeInitialiseOb();
 
      while (true)
      {
@@ -610,6 +612,153 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                    (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
           }
           break;
+
+          case 'O':
+          {
+               const auto typeName = [](object::ObjectType t) -> const char8_t*
+               {
+                    switch (t)
+                    {
+                    case object::ObjectType::Process: return u8"Process";
+                    case object::ObjectType::Thread: return u8"Thread";
+                    case object::ObjectType::File: return u8"File";
+                    case object::ObjectType::Event: return u8"Event";
+                    case object::ObjectType::Mutex: return u8"Mutex";
+                    case object::ObjectType::Semaphore: return u8"Semaphore";
+                    case object::ObjectType::Timer: return u8"Timer";
+                    case object::ObjectType::Section: return u8"Section";
+                    case object::ObjectType::Port: return u8"Port";
+                    case object::ObjectType::SymbolicLink: return u8"SymLink";
+                    case object::ObjectType::Directory: return u8"Directory";
+                    case object::ObjectType::Device: return u8"Device";
+                    case object::ObjectType::Driver: return u8"Driver";
+                    case object::ObjectType::TypeDescriptor: return u8"TypeDesc";
+                    case object::ObjectType::Processor: return u8"Processor";
+                    default: return u8"Unknown";
+                    }
+               };
+
+               struct PrintCtx
+               {
+                    char indent[64]{};
+                    std::size_t indentLen{};
+                    const decltype(typeName)& typeNameFn; // NOLINT
+               };
+
+               constexpr std::size_t kMaxChildren = 256;
+
+               struct PrintNodeCtx
+               {
+                    const object::ObjectHeader* children[kMaxChildren]{};
+                    std::size_t childCount{};
+               };
+
+               struct Printer
+               {
+                    static void PrintNode(const object::ObjectHeader* node, char* indent, std::size_t& indentLen,
+                                          const decltype(typeName)& typeNameFn, std::uint32_t depth) noexcept
+                    {
+                         if (depth > 16)
+                         {
+                              debugging::DbgWrite(u8"{}... (depth limit)\r\n", indent);
+                              return;
+                         }
+
+                         if (node->type == object::ObjectType::Directory)
+                         {
+                              struct SnapCtx
+                              {
+                                   const object::ObjectHeader** children;
+                                   std::size_t* count;
+                              };
+
+                              const object::ObjectHeader* children[kMaxChildren]{};
+                              std::size_t childCount = 0;
+                              SnapCtx snapCtx{.children = children, .count = &childCount};
+
+                              node->BodyAs<object::DirectoryBody>()->Enumerate(
+                                  [](const object::ObjectHeader* child, void* ctx) noexcept
+                                  {
+                                       auto* s = static_cast<SnapCtx*>(ctx);
+                                       if (*s->count < kMaxChildren) s->children[(*s->count)++] = child;
+                                  },
+                                  &snapCtx);
+
+                              for (std::size_t i = 0; i < childCount; ++i)
+                              {
+                                   const object::ObjectHeader* child = children[i];
+                                   const bool last = (i == childCount - 1);
+
+                                   debugging::DbgWrite(u8"{}{} [{}] \"{}\"", reinterpret_cast<const char8_t*>(indent),
+                                                       last ? u8"└──" : u8"├──", typeNameFn(child->type),
+                                                       child->accessName.View());
+
+                                   if (child->type == object::ObjectType::SymbolicLink)
+                                   {
+                                        const auto* sl = child->BodyAs<object::SymbolicLinkBody>();
+                                        debugging::DbgWrite(u8" -> \"{}\"", sl->targetPath);
+                                   }
+                                   else if (child->type == object::ObjectType::TypeDescriptor)
+                                   {
+                                        const auto* td = child->BodyAs<object::TypeDescriptorBody>();
+                                        debugging::DbgWrite(u8" (typeId={})", static_cast<std::uint16_t>(td->typeId));
+                                   }
+                                   else if (child->type == object::ObjectType::Processor)
+                                   {
+                                        const auto* pr = child->BodyAs<object::ProcessorBody>();
+                                        debugging::DbgWrite(u8" (CPU{} APIC={} {})", pr->logicalIndex, pr->apicId,
+                                                            pr->isBsp ? u8"BSP" : u8"AP");
+                                   }
+
+                                   debugging::DbgWrite(u8"  refs={}\r\n",
+                                                       child->referenceCount.load(std::memory_order::relaxed));
+
+                                   if (child->type == object::ObjectType::Directory)
+                                   {
+                                        const char8_t* ext = last ? u8"    " : u8"│   ";
+                                        std::size_t extLen = 0;
+                                        while (ext[extLen]) ++extLen;
+
+                                        if (indentLen + extLen + 1 < 64)
+                                        {
+                                             std::memcpy(indent + indentLen, reinterpret_cast<const char*>(ext),
+                                                         extLen);
+                                             indentLen += extLen;
+                                             indent[indentLen] = '\0';
+
+                                             PrintNode(child, indent, indentLen, typeNameFn, depth + 1);
+
+                                             indentLen -= extLen;
+                                             indent[indentLen] = '\0';
+                                        }
+                                   }
+                              }
+
+                              if (childCount == 0)
+                                   debugging::DbgWrite(u8"{}(empty)\r\n", reinterpret_cast<const char8_t*>(indent));
+                         }
+                    }
+               };
+
+               if (!object::g_rootDirectoryHeader)
+               {
+                    debugging::DbgWrite(u8"Object namespace not initialised.\r\n");
+                    break;
+               }
+
+               debugging::DbgWrite(u8"\r\nObject Namespace\r\n");
+               debugging::DbgWrite(u8"[Directory] \"\\\"  refs={}\r\n",
+                                   object::g_rootDirectoryHeader->referenceCount.load(std::memory_order::relaxed));
+
+               char indent[64]{};
+               std::size_t indentLen = 0;
+
+               Printer::PrintNode(object::g_rootDirectoryHeader, indent, indentLen, typeName, 0);
+
+               debugging::DbgWrite(u8"\r\n");
+               break;
+          }
+
           case 'c':
           {
                const auto start = KeReadHighResolutionTimer();
