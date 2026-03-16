@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
@@ -31,6 +32,22 @@ namespace debugging
           static void Write(const char8_t* value)
           {
                while (value[0] != 0) operations::WriteSerialCharacter(static_cast<char>(*value++));
+          }
+     };
+
+     template <> struct SerialFormatter<std::u8string>
+     {
+          static void Write(const std::u8string& value)
+          {
+               for (char8_t c : value) operations::WriteSerialCharacter(static_cast<char>(c));
+          }
+     };
+
+     template <> struct SerialFormatter<std::string>
+     {
+          static void Write(const std::string& value)
+          {
+               for (char c : value) operations::WriteSerialCharacter(c);
           }
      };
 

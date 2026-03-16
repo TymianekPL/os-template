@@ -2,7 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include "memory/vallocator.h"
+#include "../memory/vallocator.h"
+#include "../object/object.h"
 
 namespace kernel
 {
@@ -38,6 +39,8 @@ namespace kernel
           std::uintptr_t _instructionPointer;
           std::uintptr_t _kernelStackBase;
           std::uintptr_t _userStackBase;
+
+          object::HandleTable _handleTable;
 
           ProcessControlBlock* _parent;
           const char* _name;
@@ -88,6 +91,26 @@ namespace kernel
 
           [[nodiscard]] memory::VirtualMemoryAllocator& GetVadAllocator() { return _vadAllocator; }
           [[nodiscard]] const memory::VirtualMemoryAllocator& GetVadAllocator() const { return _vadAllocator; }
+          [[nodiscard]] object::HandleTable& GetHandleTable() noexcept { return _handleTable; }
+          [[nodiscard]] const object::HandleTable& GetHandleTable() const noexcept { return _handleTable; }
+          [[nodiscard]] object::Handle CreateObject(const object::ObjectAttributes& attr) noexcept;
+          [[nodiscard]] object::Handle OpenObject(std::string_view name,
+                                                  object::AccessRights access = object::AccessRights::All) noexcept;
+
+          object::ObjectStatus CloseHandle(object::Handle handle) noexcept;
+
+          [[nodiscard]] object::Handle DuplicateHandle(
+              object::Handle src, object::AccessRights access = object::AccessRights::All) noexcept;
+
+          [[nodiscard]] object::Handle DuplicateHandleTo(
+              kernel::ProcessControlBlock& dst, object::Handle src,
+              object::AccessRights access = object::AccessRights::All) noexcept;
+
+          [[nodiscard]] object::ObjectHeader* QueryHandle(object::Handle handle) const noexcept;
+
+          [[nodiscard]] object::Handle OpenObjectAbsolute(std::string_view path,
+                                                          object::AccessRights access = object::AccessRights::All,
+                                                          object::OpenFlags flags = object::OpenFlags::None) noexcept;
      };
 
 } // namespace kernel

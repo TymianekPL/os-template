@@ -1,7 +1,7 @@
 add_executable(Kernel
     src/main.cpp
     src/kinit.cpp
-    src/process.cpp
+    src/process/process.cpp
     src/memory/pallocator.cpp
     src/memory/vallocator.cpp
     src/memory/kheap.cpp
@@ -9,6 +9,8 @@ add_executable(Kernel
     src/dbg/bugcheck.cpp
     src/crtstub.cpp
     src/perf/sysmetrics.cpp
+    src/object/object.cpp
+    src/dbg/kassert.cpp
 )
 set(KERNEL_IMAGE "kernel")
 
@@ -100,6 +102,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wl,/ENTRY:KiStartup
         -Wl,/guard:no
         -Wl,/CETCOMPAT:NO
+        -Wl,/NODEFAULTLIB
     )
     
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
