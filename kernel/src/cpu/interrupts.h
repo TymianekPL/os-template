@@ -2,6 +2,80 @@
 
 #include <cstdint>
 
+#pragma pack(push, 1)
+struct RSDPDescriptor
+{
+     char signature[8]; // "RSD PTR " NOLINT
+     std::uint8_t checksum;
+     char oemId[6];         // NOLINT
+     std::uint8_t revision; // 0 for ACPI 1.0; 2 for ACPI 2.0+
+     std::uint32_t rsdtAddress;
+};
+struct RSDPDescriptor2
+{
+     RSDPDescriptor firstPart;
+     std::uint32_t length;
+     std::uint64_t xsdtAddress;
+     std::uint8_t extendedChecksum;
+     std::uint8_t reserved[3]; // NOLINT
+};
+struct ACPISDTHeader
+{
+     char signature[4]; // NOLINT
+     std::uint32_t length;
+     std::uint8_t revision;
+     std::uint8_t checksum;
+     char oemId[6];      // NOLINT
+     char oemTableId[8]; // NOLINT
+     std::uint32_t oemRevision;
+     std::uint32_t creatorId;
+     std::uint32_t creatorRevision;
+};
+
+struct MCFGAllocationClass
+{
+     std::uint64_t baseAddress;
+     std::uint16_t pciSegmentGroup;
+     std::uint8_t startBusNumber;
+     std::uint8_t endBusNumber;
+     std::uint32_t reserved;
+};
+
+struct RSDT
+{
+     ACPISDTHeader header;
+     std::uint32_t tablePointers[0]; // NOLINT
+};
+
+struct XSDT
+{
+     ACPISDTHeader header;
+     std::uint64_t tablePointers[0]; // NOLINT
+};
+
+struct MADT
+{
+     ACPISDTHeader header;
+     std::uint32_t localApicAddress;
+     std::uint32_t flags;
+     std::uint8_t entries[]; // NOLINT
+};
+
+struct MADTEntry
+{
+     std::uint8_t type;
+     std::uint8_t length;
+};
+
+struct MCFG
+{
+     ACPISDTHeader header;
+     std::uint64_t reserved;
+     MCFGAllocationClass allocationClasses[]; // NOLINT
+};
+
+#pragma pack(pop)
+
 namespace cpu
 {
      extern std::uint64_t g_systemBootTimeOffsetSeconds;
@@ -126,7 +200,7 @@ namespace cpu
      constexpr IRQL KeVectorToIrql(std::uint8_t vector) noexcept { return KeApicClassToIrql(vector >> 4); }
 } // namespace cpu
 
-using InterruptHandler = bool (*)(cpu::IInterruptFrame&);
+using InterruptHandler = bool (*)(cpu::IInterruptFrame&, void* argument);
 
 void KiInitialiseInterrupts(std::uintptr_t acpiPhysical);
 void HandleInterrupt(cpu::IInterruptFrame& frame);
@@ -137,4 +211,5 @@ std::uint64_t KeReadHighResolutionTimer();
 std::uint64_t KeReadLowResolutionTimerFrequency();
 std::uint64_t KeReadHighResolutionTimerFrequency();
 std::uint64_t KeCurrentSystemTime(); // milliseconds!!!
-void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler);
+void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler,
+                                void* argument = nullptr);

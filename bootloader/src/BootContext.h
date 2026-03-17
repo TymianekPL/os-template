@@ -54,13 +54,7 @@ namespace bootloader
           bool MapEfiRuntimeRegions();
           void TrackMappedRegion(std::uintptr_t start, std::size_t size, const wchar_t* name);
 
-     public:
-          void PrintMappedRegions(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* conOut);
-          void DebugPrintPageTableEntry(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL* conOut, std::uintptr_t virtualAddr);
-
-     private:
           static void* AllocatePageTableMemory(std::size_t size);
-          bool MapPageTableStructures();
 
           static EFI_BOOT_SERVICES* s_bootServices;
      };

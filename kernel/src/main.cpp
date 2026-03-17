@@ -4,6 +4,8 @@
 #include "BootVideo.h"
 #include "cpu/interrupts.h"
 #include "dbg/kasan.h"
+#include "device/device.h"
+#include "device/pcie.h"
 #include "kinit.h"
 #include "memory/kheap.h"
 #include "memory/pallocator.h"
@@ -378,7 +380,7 @@ inline std::uint8_t In8(std::uint16_t port)
 }
 #endif                  // ^^^ Clang
 
-bool SerialInterruptHandler([[maybe_unused]] cpu::IInterruptFrame& frame)
+bool SerialInterruptHandler([[maybe_unused]] cpu::IInterruptFrame& frame, void* unused)
 {
      const std::uint8_t iir = In8(COM1_PORT + 2);
      if (iir & 0x01) return false;
@@ -427,16 +429,19 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
                                                     memory::AllocationFlags::ImmediatePhysical,
                                                 memory::MemoryProtection::ReadWrite));
 
+     memory::KiHeapInitialise();
+
+     object::KeInitialiseOb();
+     process::KiInitialiseTaskScheduler(0, reinterpret_cast<void*>(KiIdleLoop), param->stackVirtualBase);
+
+     KeInitialisePCIE();
      VidInitialise(VdiFrameBuffer{.framebuffer = buffer,
                                   .width = framebuffer.width,
                                   .height = framebuffer.height,
                                   .scalineSize = framebuffer.scanlineSize,
                                   .optionalBackbuffer = bbuffer});
 
-     kasan::KeInitialise();
-     memory::KiHeapInitialise();
-     object::KeInitialiseOb();
-     process::KiInitialiseTaskScheduler(0, reinterpret_cast<void*>(KiIdleLoop), param->stackVirtualBase);
+     // kasan::KeInitialise();
 
 #ifdef ARCH_X8664
      constexpr cpu::InterruptVector SerialVector = 0x24;
@@ -782,6 +787,21 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
                                         const auto* pr = child->BodyAs<object::ProcessorBody>();
                                         debugging::DbgWrite(u8" (CPU{} APIC={} {})", pr->logicalIndex, pr->apicId,
                                                             pr->isBsp ? u8"BSP" : u8"AP");
+                                   }
+                                   else if (child->type == object::ObjectType::Device)
+                                   {
+                                        const auto* dev = child->BodyAs<device::Device>();
+                                        if (dev->type == device::DeviceType::PCI)
+                                        {
+                                             const auto* pciDev = static_cast<const PCIDevice*>(dev);
+                                             debugging::DbgWrite(u8" (PCI {}:{}:{}.{}) has parent={}", pciDev->segment,
+                                                                 pciDev->bus, pciDev->device, pciDev->function,
+                                                                 !!pciDev->parent);
+                                        }
+                                        else
+                                        {
+                                             debugging::DbgWrite(u8" (Device)\r\n");
+                                        }
                                    }
 
                                    debugging::DbgWrite(u8"  refs={}\r\n",

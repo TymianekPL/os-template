@@ -88,7 +88,8 @@ qemu-system-x86_64.exe ^
      -serial stdio -M q35 -no-reboot -no-shutdown ^
      -monitor tcp:127.0.0.1:4445,server,nowait ^
      -cpu max,+avx,+avx2,+xsave,+xsaveopt,migratable=no,monitor=on -overcommit cpu-pm=on ^
-     -rtc base=utc,clock=rt
+     -rtc base=utc,clock=rt -usb -device usb-kbd -device usb-mouse ^
+     -device virtio-gpu-pci
 
 echo.
 echo QEMU session ended.

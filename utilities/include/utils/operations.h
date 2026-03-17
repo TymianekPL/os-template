@@ -16,13 +16,21 @@ namespace operations
      void Yield();
      std::uint64_t ReadCurrentCycles();
      void Halt();
-     
+
      void InitialiseSerial();
      void WriteSerialCharacter(char value);
      char ReadSerialCharacter();
      char TryReadSerialCharacter();
      void SerialPushCharacter(char c);
      void SerialHoldLineHigh();
+
+     std::uint8_t ReadPort8(std::uint16_t port);
+     std::uint16_t ReadPort16(std::uint16_t port);
+     std::uint32_t ReadPort32(std::uint16_t port);
+
+     void WritePort8(std::uint16_t port, std::uint8_t value);
+     void WritePort16(std::uint16_t port, std::uint16_t value);
+     void WritePort32(std::uint16_t port, std::uint32_t value);
 
      template <int = 0> void WriteSerialString(const char* value)
      {

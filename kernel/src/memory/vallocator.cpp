@@ -1,7 +1,10 @@
 #include "vallocator.h"
+#include <utils/identify.h>
 #include <utils/memory.h>
 #include <algorithm>
+#include "../process/taskScheduler.h"
 #include "utils/kdbg.h"
+#include "utils/operations.h"
 
 static constexpr std::size_t AlignUp(std::size_t value, std::size_t align)
 {
@@ -284,7 +287,7 @@ namespace memory
                     current = current->right;
           }
 
-          debugging::DbgWrite(u8"[FindContaining] {} not found\r\n", reinterpret_cast<void*>(address));
+          // debugging::DbgWrite(u8"[FindContaining] {} not found\r\n", reinterpret_cast<void*>(address));
           return nullptr;
      }
 
@@ -1026,15 +1029,64 @@ namespace memory
 
           return DecommitMemoryRange(node, baseAddress, size);
      }
+
+     [[nodiscard]] std::uintptr_t KeGetPhysicalAddress(void* virtualAddress)
+     {
+#ifdef ARCH_X8664
+          std::uintptr_t va = reinterpret_cast<std::uintptr_t>(virtualAddress);
+          std::uintptr_t pageTable = paging::GetCurrentPageTable();
+
+          auto* pml4 = reinterpret_cast<std::uint64_t*>(pageTable + virtualOffset);
+          std::uint64_t pml4Index = (va >> 39) & 0x1FF;
+          std::uint64_t pdptIndex = (va >> 30) & 0x1FF;
+          std::uint64_t pdIndex = (va >> 21) & 0x1FF;
+          std::uint64_t ptIndex = (va >> 12) & 0x1FF;
+
+          if ((pml4[pml4Index] & 1) == 0) return ~0uz;
+          auto* pdpt = reinterpret_cast<std::uint64_t*>((pml4[pml4Index] & ~0xFFFULL) + virtualOffset);
+
+          if ((pdpt[pdptIndex] & 1) == 0) return ~0uz;
+          auto* pd = reinterpret_cast<std::uint64_t*>((pdpt[pdptIndex] & ~0xFFFULL) + virtualOffset);
+
+          if ((pd[pdIndex] & 1) == 0 || (pd[pdIndex] & (1ULL << 7)) != 0) return ~0uz;
+          auto* pt = reinterpret_cast<std::uint64_t*>((pd[pdIndex] & ~0xFFFULL) + virtualOffset);
+
+          if ((pt[ptIndex] & 1) == 0) return ~0uz;
+          return (pt[ptIndex] & ~0xFFFULL) + (va & 0xFFF);
+#elifdef ARCH_ARM64
+          std::uintptr_t va = reinterpret_cast<std::uintptr_t>(virtualAddress);
+          std::uintptr_t pageTable = paging::GetCurrentPageTable();
+
+          auto* pgd = reinterpret_cast<std::uint64_t*>(pageTable);
+          std::uint64_t pgdIndex = (va >> 39) & 0x1FF;
+          std::uint64_t pudIndex = (va >> 30) & 0x1FF;
+          std::uint64_t pmdIndex = (va >> 21) & 0x1FF;
+          std::uint64_t ptIndex = (va >> 12) & 0x1FF;
+
+          if ((pgd[pgdIndex] & 1) == 0) return ~0uz;
+          auto* pud = reinterpret_cast<std::uint64_t*>(pgd[pgdIndex] & ~0xFFFULL);
+
+          if ((pud[pudIndex] & 1) == 0) return ~0uz;
+          auto* pmd = reinterpret_cast<std::uint64_t*>(pud[pudIndex] & ~0xFFFULL);
+
+          if ((pmd[pmdIndex] & 1) == 0 || (pmd[pmdIndex] & (1ULL << 7)) != 0) return ~0uz;
+          auto* pt = reinterpret_cast<std::uint64_t*>(pmd[pmdIndex] & ~0xFFFULL);
+
+          if ((pt[ptIndex] & 1) == 0) return ~0uz;
+          return (pt[ptIndex] & ~0xFFFULL) + (va & 0xFFF);
+#else
+#error "Unsupported architecture"
+#endif
+     }
 } // namespace memory
 
 template <> struct debugging::SerialFormatter<memory::VADEntry>
 {
-     static void Write(const memory::VADEntry& entry)
+     static void Write(const memory::VADEntry& entry, const FormatSpec& spec)
      {
           debugging::SerialFormatter<char8_t[sizeof(u8"VADEntry{ .baseAddress = ")]>::Write( // NOLINT
-              u8"VADEntry{ .baseAddress = ");
-          debugging::SerialFormatter<const volatile void*>::Write(reinterpret_cast<void*>(entry.baseAddress));
-          debugging::SerialFormatter<char8_t[sizeof(u8"}")]>::Write(u8"}"); // NOLINT
+              u8"VADEntry{ .baseAddress = ", spec);
+          debugging::SerialFormatter<const volatile void*>::Write(reinterpret_cast<void*>(entry.baseAddress), spec);
+          debugging::SerialFormatter<char8_t[sizeof(u8"}")]>::Write(u8"}", spec); // NOLINT
      }
 };

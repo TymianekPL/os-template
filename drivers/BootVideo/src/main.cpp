@@ -287,6 +287,18 @@ DLLEXPORT void VidDrawChar(std::uint32_t x, std::uint32_t y, char c, std::uint32
           }
      }
 }
+DLLEXPORT void VidGetDimensions(std::uint32_t& width, std::uint32_t& height)
+{
+     width = g_buffer.width;
+     height = g_buffer.height;
+}
+static std::uint32_t g_cursorX = 0;
+static std::uint32_t g_cursorY = 0;
+DLLEXPORT void VidSetCursorPosition(std::uint32_t x, std::uint32_t y)
+{
+     g_cursorX = x;
+     g_cursorY = y;
+}
 
 DLLEXPORT void VidExchangeBuffers()
 {

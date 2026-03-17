@@ -3,7 +3,6 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 #include "../dbg/bugcheck.h"
 #include "../process/taskScheduler.h"
 #include "utils/kdbg.h"
@@ -16,22 +15,19 @@ namespace
      constexpr std::size_t MaxInterruptVectors = 256;
      struct HandlerNode
      {
-          InterruptHandler handlerA;
-          InterruptHandler handlerB;
-          InterruptHandler handlerC;
-          InterruptHandler handlerD;
-          InterruptHandler handlerE;
+          InterruptHandler handler;
           HandlerNode* next = nullptr;
+          void* argument = nullptr;
 
-          explicit HandlerNode(InterruptHandler h) : handlerA(h), handlerB(h), handlerC(h), handlerD(h), handlerE(h) {}
+          explicit HandlerNode(InterruptHandler h, void* arg) : handler(h), argument(arg) {}
      };
      struct HandlerList
      {
           HandlerNode* head = nullptr;
 
-          void Add(InterruptHandler h)
+          void Add(InterruptHandler h, void* argument)
           {
-               auto* node = new HandlerNode(h);
+               auto* node = new HandlerNode(h, argument);
                node->next = head;
                head = node;
           }
@@ -40,11 +36,7 @@ namespace
           {
                for (HandlerNode* node = head; node != nullptr; node = node->next)
                {
-                    if (node->handlerA && node->handlerA(frame)) return true;
-                    if (node->handlerB && node->handlerB(frame)) return true;
-                    if (node->handlerC && node->handlerC(frame)) return true;
-                    if (node->handlerD && node->handlerD(frame)) return true;
-                    if (node->handlerE && node->handlerE(frame)) return true;
+                    if (node->handler && node->handler(frame, node->argument)) return true;
                }
                return false;
           }
@@ -64,75 +56,6 @@ namespace
      std::array<HandlerList, MaxInterruptVectors> g_interruptHandlers{};
 } // namespace
 
-struct RSDPDescriptor
-{
-     char signature[8]; // "RSD PTR " NOLINT
-     std::uint8_t checksum;
-     char oemId[6];         // NOLINT
-     std::uint8_t revision; // 0 for ACPI 1.0; 2 for ACPI 2.0+
-     std::uint32_t rsdtAddress;
-};
-struct RSDPDescriptor2
-{
-     RSDPDescriptor firstPart;
-     std::uint32_t length;
-     std::uint64_t xsdtAddress;
-     std::uint8_t extendedChecksum;
-     std::uint8_t reserved[3]; // NOLINT
-};
-struct ACPISDTHeader
-{
-     char signature[4]; // NOLINT
-     std::uint32_t length;
-     std::uint8_t revision;
-     std::uint8_t checksum;
-     char oemId[6];      // NOLINT
-     char oemTableId[8]; // NOLINT
-     std::uint32_t oemRevision;
-     std::uint32_t creatorId;
-     std::uint32_t creatorRevision;
-};
-
-struct MCFGAllocationClass
-{
-     std::uint64_t baseAddress;
-     std::uint16_t pciSegmentGroup;
-     std::uint8_t startBusNumber;
-     std::uint8_t endBusNumber;
-     std::uint32_t reserved;
-};
-
-struct RSDT
-{
-     ACPISDTHeader header;
-     std::uint32_t tablePointers[0]; // NOLINT
-};
-
-struct XSDT
-{
-     ACPISDTHeader header;
-     std::uint64_t tablePointers[0]; // NOLINT
-};
-
-struct MADT
-{
-     ACPISDTHeader header;
-     std::uint32_t localApicAddress;
-     std::uint32_t flags;
-     std::uint8_t entries[]; // NOLINT
-};
-
-struct MADTEntry
-{
-     std::uint8_t type;
-     std::uint8_t length;
-};
-
-struct MCFG
-{
-     ACPISDTHeader header;
-     std::uint64_t reserved;
-};
 #pragma pack(push, 1)
 struct ACPIAddress
 {
@@ -657,12 +580,12 @@ std::uint64_t KeCurrentSystemTime()
 
 void KiInitialiseInterrupts(std::uintptr_t acpiPhysical) { KiInitialiseLAPICTimer(acpiPhysical); }
 
-void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler)
+void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler,
+                                void* argument)
 {
-
      if (vector >= MaxInterruptVectors) return;
 
-     g_interruptHandlers[vector].Add(handler);
+     g_interruptHandlers[vector].Add(handler, argument);
 
      IoApicRouteIrq(physical, vector);
 }
@@ -914,6 +837,32 @@ static inline void ArmDisablePhysicalTimer()
      asm volatile("msr cntp_ctl_el0, %0" : : "r"(ctl));
      asm volatile("isb");
 #endif
+}
+
+static void GicRouteIrq(std::uint32_t irq, std::uint8_t vector)
+{
+     constexpr std::uintptr_t HhdmOffset = 0xffff'8000'0000'0000ULL;
+
+     const std::uintptr_t regEnable = g_gicdPhysBase + HhdmOffset + 0x100 + (irq / 32) * 4;
+     const std::uintptr_t regTarget = g_gicdPhysBase + HhdmOffset + 0x800 + irq;
+
+     *reinterpret_cast<volatile std::uint32_t*>(regEnable) |= (1u << (irq % 32));
+
+     // TODO: meow
+     *reinterpret_cast<volatile std::uint32_t*>(regTarget) = 1 << 0;
+
+     const std::uintptr_t regPrio = g_gicdPhysBase + HhdmOffset + 0x400 + irq;
+     *reinterpret_cast<volatile std::uint8_t*>(regPrio) = vector;
+}
+
+void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler,
+                                void* argument)
+{
+     if (vector >= MaxInterruptVectors) return;
+
+     g_interruptHandlers[vector].Add(handler, argument);
+
+     GicRouteIrq(physical, vector);
 }
 
 static inline void ArmEnablePhysicalTimer()
@@ -1395,10 +1344,10 @@ void KiInitialiseInterrupts(std::uintptr_t acpiPhysical)
 
           for (std::size_t i = 0; i < entryCount; i++)
           {
-               std::uint32_t upper = static_cast<std::uint32_t>(pXsdt->tablePointers[i] >> 32);
-               ACPISDTHeader* pHeader = reinterpret_cast<ACPISDTHeader*>(upper + 0xffff'8000'0000'0000);
+               if (pXsdt->tablePointers[i] == 0) break;
 
-               if (upper == 0) break;
+               ACPISDTHeader* pHeader =
+                   reinterpret_cast<ACPISDTHeader*>(pXsdt->tablePointers[i] + 0xffff'8000'0000'0000);
 
                if (memcmp(pHeader->signature, "APIC", 4) == 0)
                {

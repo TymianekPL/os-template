@@ -13,6 +13,9 @@ add_executable(Kernel
     src/dbg/kassert.cpp
     src/dbg/kasan.cpp
     src/process/taskScheduler.cpp
+    src/device/pcie.cpp
+    src/device/usb.cpp
+    src/device/dma.cpp
 )
 set(KERNEL_IMAGE "kernel")
 
@@ -69,9 +72,6 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(Kernel PRIVATE
         -fno-sanitize=all
         -ffreestanding
-        -fsanitize=address
-        -fsanitize-address-outline-instrumentation
-        -fno-sanitize-address-use-after-scope
         -fno-stack-protector
         -fno-stack-check
         -fshort-wchar

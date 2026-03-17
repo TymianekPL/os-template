@@ -191,4 +191,9 @@ namespace memory
           [[nodiscard]] std::uintptr_t GetPageTableRoot() const { return _pageTableRoot; }
      };
 
+     [[nodiscard]] std::uintptr_t KeGetPhysicalAddress(void* virtualAddress);
+     [[nodiscard]] inline std::uintptr_t KeGetPhysicalAddress(const volatile void* virtualAddress)
+     {
+          return KeGetPhysicalAddress(const_cast<void*>(virtualAddress)); // NOLINT
+     }
 } // namespace memory

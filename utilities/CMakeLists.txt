@@ -74,9 +74,6 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -fno-exceptions
         -fno-rtti
         -fno-sanitize=all
-        -fsanitize=address
-        -fsanitize-address-outline-instrumentation
-        -fno-sanitize-address-use-after-scope
         -D_GLIBCXX_DEBUG=0
         -D_GLIBCXX_ASSERTIONS=0
         -D_LIBCPP_ENABLE_ASSERTIONS=0
