@@ -3,11 +3,66 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 #include "../dbg/bugcheck.h"
+#include "../process/taskScheduler.h"
 #include "utils/kdbg.h"
 #include "utils/operations.h"
 
 std::uint64_t cpu::g_systemBootTimeOffsetSeconds{};
+
+namespace
+{
+     constexpr std::size_t MaxInterruptVectors = 256;
+     struct HandlerNode
+     {
+          InterruptHandler handlerA;
+          InterruptHandler handlerB;
+          InterruptHandler handlerC;
+          InterruptHandler handlerD;
+          InterruptHandler handlerE;
+          HandlerNode* next = nullptr;
+
+          explicit HandlerNode(InterruptHandler h) : handlerA(h), handlerB(h), handlerC(h), handlerD(h), handlerE(h) {}
+     };
+     struct HandlerList
+     {
+          HandlerNode* head = nullptr;
+
+          void Add(InterruptHandler h)
+          {
+               auto* node = new HandlerNode(h);
+               node->next = head;
+               head = node;
+          }
+
+          bool Fire(cpu::IInterruptFrame& frame) const
+          {
+               for (HandlerNode* node = head; node != nullptr; node = node->next)
+               {
+                    if (node->handlerA && node->handlerA(frame)) return true;
+                    if (node->handlerB && node->handlerB(frame)) return true;
+                    if (node->handlerC && node->handlerC(frame)) return true;
+                    if (node->handlerD && node->handlerD(frame)) return true;
+                    if (node->handlerE && node->handlerE(frame)) return true;
+               }
+               return false;
+          }
+
+          ~HandlerList()
+          {
+               HandlerNode* node = head;
+               while (node)
+               {
+                    auto* next = node->next;
+                    delete node;
+                    node = next;
+               }
+          }
+     };
+
+     std::array<HandlerList, MaxInterruptVectors> g_interruptHandlers{};
+} // namespace
 
 struct RSDPDescriptor
 {
@@ -78,6 +133,30 @@ struct MCFG
      ACPISDTHeader header;
      std::uint64_t reserved;
 };
+#pragma pack(push, 1)
+struct ACPIAddress
+{
+     std::uint8_t addressSpace;
+     std::uint8_t bitWidth;
+     std::uint8_t bitOffset;
+     std::uint8_t accessSize;
+     std::uint64_t address;
+};
+struct HPET
+{
+     ACPISDTHeader header;
+     std::uint8_t hardwareRevId;
+     std::uint8_t comparatorCount : 5;
+     std::uint8_t counterSize : 1;
+     std::uint8_t reserved : 1;
+     std::uint8_t legacyReplacement : 1;
+     std::uint16_t pciVendorId;
+     ACPIAddress address;
+     std::uint8_t hpetNumber;
+     std::uint16_t minimumTick;
+     std::uint8_t pageProtection;
+};
+#pragma pack(pop)
 
 #ifdef ARCH_X8664
 cpu::InterruptVector cpu::TimerIrqVector = 0xd0;
@@ -101,6 +180,18 @@ struct IOAPICEntry
      std::uint32_t ioApicAddress;
      std::uint32_t globalSystemInterruptBase;
 };
+
+struct MADTEntryIOAPIC
+{
+     MADTEntry header;
+     std::uint8_t ioApicId;
+     std::uint8_t reserved;
+     std::uint32_t ioApicAddress;
+     std::uint32_t globalSystemInterruptBase;
+};
+
+static volatile std::uint32_t* g_ioApic{};
+static std::uint32_t g_ioApicGsiBase{};
 
 struct FADT
 {
@@ -235,7 +326,8 @@ struct X8664InterruptFrame : cpu::IInterruptFrame // NOLINT
           return addr;
 #endif
      }
-     [[nodiscard]] void* GetContext() const override { return frame; };
+     [[nodiscard]] void* GetContext() const override { return frame; }
+     void SetContext(void* context) override { this->frame = reinterpret_cast<InterruptFrame*>(context); }
 
      void DumpRegisters() const override
      {
@@ -275,15 +367,16 @@ volatile std::uint32_t* g_lapic{};
 MADT* g_madt{};
 MCFG* g_mcfg{};
 FADT* g_fadt{};
+HPET* g_hpet{};
 
 void KeAcknowledgeInterrupt() { g_lapic[0xB0 / 4] = 0; }
 static std::atomic<std::uint64_t> lapicTicks{};
-constexpr std::uintptr_t HpetBasePhysical = 0xFED00000;
+std::uintptr_t HpetBasePhysical = 0xFED00000;
 std::uint64_t g_HpetFemtosecondsPerTick = 0;
 
 std::uint64_t KiReadHPETRaw()
 {
-     constexpr std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
+     std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
      volatile std::uint64_t& HpetMainCounter = *reinterpret_cast<volatile std::uint64_t*>(HpetBase + 0x0F0);
      return HpetMainCounter;
 }
@@ -297,14 +390,14 @@ std::uint64_t KiGetHPETRawFrequency() { return 1'000'000'000'000'000ULL / g_Hpet
 
 std::uint64_t KiReadHPET()
 {
-     constexpr std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
+     std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
      volatile std::uint64_t& HpetMainCounter = *reinterpret_cast<volatile std::uint64_t*>(HpetBase + 0xF0);
      return HpetMainCounter * ((g_HpetFemtosecondsPerTick + 500'000ULL) / 10'000'000ULL);
 }
 
 void KiInitialiseHPET()
 {
-     constexpr std::uintptr_t HpetBaseVirtual = HpetBasePhysical + 0xffff'8000'0000'0000;
+     std::uintptr_t HpetBaseVirtual = HpetBasePhysical + 0xffff'8000'0000'0000;
 
      volatile std::uint64_t& HpetGenCapabilities = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x0);
      volatile std::uint64_t& HpetGenConfig = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x10);
@@ -371,8 +464,6 @@ std::uint64_t KiGetLAPICEstimation()
 
 void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
 {
-     KiInitialiseHPET();
-
      RSDPDescriptor* lpRsp = reinterpret_cast<RSDPDescriptor*>(acpiPhysical + 0xffff'8000'0000'0000);
      MADT* lpMadt = nullptr;
      debugging::DbgWrite(u8"RSDPv{} at {}\r\n", lpRsp->revision, lpRsp);
@@ -396,7 +487,7 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
                     lpMadt = reinterpret_cast<MADT*>(pHeader);
                     debugging::DbgWrite(u8"Found MADT at {}\r\n", lpMadt);
                }
-               else if (memcmp(pHeader->signature, "FADT", 4) == 0)
+               else if (memcmp(pHeader->signature, "FADT", 4) == 0 || memcmp(pHeader->signature, "FACP", 4) == 0)
                {
                     g_fadt = reinterpret_cast<FADT*>(pHeader);
                     debugging::DbgWrite(u8"Found FADT at {}\r\n", g_fadt);
@@ -406,8 +497,14 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
                     g_mcfg = reinterpret_cast<MCFG*>(pHeader);
                     debugging::DbgWrite(u8"Found MCFG at {}\r\n", g_mcfg);
                }
-
-               if (lpMadt != nullptr && g_mcfg != nullptr) break;
+               else if (memcmp(pHeader->signature, "HPET", 4) == 0)
+               {
+                    g_hpet = reinterpret_cast<HPET*>(pHeader);
+                    debugging::DbgWrite(u8"Found HPET at {}\r\n", g_hpet);
+               }
+               else
+                    debugging::DbgWrite(u8"Unknown entry {} ('{}')\r\n", pHeader,
+                                        reinterpret_cast<const char8_t (&)[5]>(pHeader->signature)); // NOLINT
           }
      }
      else
@@ -426,7 +523,7 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
                     lpMadt = reinterpret_cast<MADT*>(pHeader);
                     debugging::DbgWrite(u8"Found MADT at {}\r\n", lpMadt);
                }
-               else if (memcmp(pHeader->signature, "FADT", 4) == 0)
+               else if (memcmp(pHeader->signature, "FADT", 4) == 0 || memcmp(pHeader->signature, "FACP", 4) == 0)
                {
                     g_fadt = reinterpret_cast<FADT*>(pHeader);
                     debugging::DbgWrite(u8"Found FADT at {}\r\n", g_fadt);
@@ -436,13 +533,49 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
                     g_mcfg = reinterpret_cast<MCFG*>(pHeader);
                     debugging::DbgWrite(u8"Found MCFG at {}\r\n", g_mcfg);
                }
-               if (lpMadt != nullptr && g_mcfg != nullptr) break;
+               else if (memcmp(pHeader->signature, "HPET", 4) == 0)
+               {
+                    g_hpet = reinterpret_cast<HPET*>(pHeader);
+                    debugging::DbgWrite(u8"Found HPET at {}\r\n", g_hpet);
+               }
+               else
+                    debugging::DbgWrite(u8"Unknown entry {} ('{}')\r\n", pHeader,
+                                        reinterpret_cast<const char8_t (&)[5]>(pHeader->signature)); // NOLINT
           }
      }
 
      if (lpMadt == nullptr || lpMadt->localApicAddress == 0)
      {
           debugging::DbgWrite(u8"[KiInitialiseLAPICTimer] lpMadt == nullptr || lpMadt->localApicAddress == 0\r\n");
+     }
+     if (g_hpet != nullptr)
+     {
+          HpetBasePhysical = g_hpet->address.address;
+          KiInitialiseHPET();
+          debugging::DbgWrite(u8"HPET found at {}Hz => base={}\r\n", KiGetHPETRawFrequency(),
+                              reinterpret_cast<void*>(g_hpet->address.address));
+     }
+
+     const std::uint8_t* ptr = lpMadt->entries;
+     const std::uint8_t* end = reinterpret_cast<const std::uint8_t*>(lpMadt) + lpMadt->header.length;
+
+     while (ptr < end)
+     {
+          const auto* entry = reinterpret_cast<const MADTEntry*>(ptr);
+
+          if (entry->type == 1)
+          {
+               const auto* io = reinterpret_cast<const MADTEntryIOAPIC*>(entry);
+
+               g_ioApic = reinterpret_cast<volatile std::uint32_t*>(static_cast<std::uintptr_t>(io->ioApicAddress) +
+                                                                    0xffff'8000'0000'0000);
+
+               g_ioApicGsiBase = io->globalSystemInterruptBase;
+
+               debugging::DbgWrite(u8"IOAPIC found at {} GSI base {}\r\n", g_ioApic, g_ioApicGsiBase);
+          }
+
+          ptr += entry->length;
      }
 
      std::uintptr_t lapicBasePhysical = __readmsr(0x1b); // IA32_APIC_BASE
@@ -470,10 +603,6 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
 
      g_lapic = lapicBase;
 
-     volatile std::uint32_t* ioApicBase =
-         reinterpret_cast<volatile std::uint32_t*>(0xffff'8000'FEC0'0000ULL); // TODO: Please fix this shit
-
-     debugging::DbgWrite(u8"IOAPIC at {}\r\n", ioApicBase);
      approximation = 0;
      const auto initialCount = KiGetLAPICEstimation() / 1000;
 
@@ -481,6 +610,27 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
      lapicBase[0xB0 / 4] = 0;
 }
 static std::atomic<std::uint32_t> g_lapicFrequency{};
+
+static inline void IoApicWrite(std::uint32_t reg, std::uint32_t value)
+{
+     g_ioApic[0] = reg;
+     g_ioApic[4] = value;
+}
+
+static inline std::uint32_t IoApicRead(std::uint32_t reg)
+{
+     g_ioApic[0] = reg;
+     return g_ioApic[4];
+}
+
+static void IoApicRouteIrq(std::uint32_t irq, std::uint8_t vector)
+{
+     const std::uint32_t gsi = irq + g_ioApicGsiBase;
+     const std::uint32_t reg = 0x10 + (gsi * 2);
+
+     IoApicWrite(reg + 1, 0);
+     IoApicWrite(reg, vector);
+}
 
 void KeSetTimerFrequency(std::uint32_t frequency)
 {
@@ -506,6 +656,17 @@ std::uint64_t KeCurrentSystemTime()
 }
 
 void KiInitialiseInterrupts(std::uintptr_t acpiPhysical) { KiInitialiseLAPICTimer(acpiPhysical); }
+
+void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler)
+{
+
+     if (vector >= MaxInterruptVectors) return;
+
+     g_interruptHandlers[vector].Add(handler);
+
+     IoApicRouteIrq(physical, vector);
+}
+
 #elifdef ARCH_ARM64
 
 #include <atomic>
@@ -628,6 +789,7 @@ struct ARM64InterruptFrame : cpu::IInterruptFrame // NOLINT
      [[nodiscard]] std::uint64_t GetStackPointer() const override { return frame->sp; }
      [[nodiscard]] std::uint64_t GetFaultingAddress() const override { return frame->far; }
      [[nodiscard]] void* GetContext() const override { return this->frame; }
+     void SetContext(void* context) override { this->frame = reinterpret_cast<InterruptFrame*>(context); }
 
      void DumpRegisters() const override
      {
@@ -1363,6 +1525,8 @@ void HandleInterrupt(cpu::IInterruptFrame& frame)
      {
           if (frame.GetExtra() == cpu::TimerIrqVector)
           {
+               auto* newContext = process::KiSwitchThread(frame.GetContext());
+               frame.SetContext(newContext);
 #ifdef ARCH_X8664
                lapicTicks.fetch_add(1, std::memory_order::relaxed);
 #elifdef ARCH_ARM64
@@ -1371,13 +1535,30 @@ void HandleInterrupt(cpu::IInterruptFrame& frame)
           }
           else
           {
-               debugging::DbgWrite(u8"int = {}\r\n", frame.GetVector());
-               operations::DisableInterrupts();
-               while (true) operations::Halt();
+               const bool handled = g_interruptHandlers[frame.GetVector()].Fire(frame);
+               if (!handled)
+               {
+                    if (frame.GetError() == cpu::InterruptError::HardwareInterrupt)
+                    {
+                         debugging::DbgWrite(u8"Unhandled IRQ vector {}\r\n", frame.GetVector());
+                    }
+                    else
+                    {
+                         debugging::DbgWrite(u8"Unhandled CPU exception {}\r\n", frame.GetVector());
+                    }
+               }
           }
 
           return;
      }
+
+     static bool inBugCheck = false;
+     if (inBugCheck)
+     {
+          operations::DisableInterrupts();
+          while (true) operations::Halt();
+     }
+     inBugCheck = true;
 
      frame.DumpRegisters();
      debugging::DbgWrite(u8"Vector  = {}\r\n", reinterpret_cast<void*>(frame.GetVector()));

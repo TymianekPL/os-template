@@ -3,6 +3,12 @@
 #include <cstddef>
 #include <cstdint>
 
+#if defined(__clang__) || defined(__GNUC__)
+#define NO_ASAN __attribute__((no_sanitize("address")))
+#else
+#define NO_ASAN
+#endif
+
 namespace operations
 {
      void DisableInterrupts();
@@ -10,9 +16,14 @@ namespace operations
      void Yield();
      std::uint64_t ReadCurrentCycles();
      void Halt();
+     
+     void InitialiseSerial();
      void WriteSerialCharacter(char value);
      char ReadSerialCharacter();
      char TryReadSerialCharacter();
+     void SerialPushCharacter(char c);
+     void SerialHoldLineHigh();
+
      template <int = 0> void WriteSerialString(const char* value)
      {
           while (value[0] != 0) WriteSerialCharacter(*value++);

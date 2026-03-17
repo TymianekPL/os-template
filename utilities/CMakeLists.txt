@@ -40,12 +40,25 @@ elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
     endif()
 endif()
 
-add_library(utilities STATIC ${UTILITIES_SOURCES})
+add_library(utilitiesASAN STATIC ${UTILITIES_SOURCES})
+add_library(utilitiesBOOT STATIC ${UTILITIES_SOURCES})
 
-target_include_directories(utilities PUBLIC include)
+target_include_directories(utilitiesASAN PUBLIC include)
+target_include_directories(utilitiesBOOT PUBLIC include)
 
 if(MSVC)
-    target_compile_options(utilities PRIVATE
+    target_compile_options(utilitiesASAN PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:/GS->
+        $<$<COMPILE_LANGUAGE:CXX>:/GR->
+        $<$<COMPILE_LANGUAGE:CXX>:/EHs->
+        $<$<COMPILE_LANGUAGE:CXX>:/EHc->
+        $<$<COMPILE_LANGUAGE:CXX>:/D_HAS_EXCEPTIONS=0>
+        $<$<COMPILE_LANGUAGE:CXX>:/D_ITERATOR_DEBUG_LEVEL=0>
+        $<$<COMPILE_LANGUAGE:CXX>:/D_SECURE_SCL=0>
+        $<$<COMPILE_LANGUAGE:CXX>:/D_NO_DEBUG_HEAP=1>
+        $<$<COMPILE_LANGUAGE:CXX>:/Oi>
+    )
+    target_compile_options(utilitiesBOOT PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:/GS->
         $<$<COMPILE_LANGUAGE:CXX>:/GR->
         $<$<COMPILE_LANGUAGE:CXX>:/EHs->
@@ -57,7 +70,19 @@ if(MSVC)
         $<$<COMPILE_LANGUAGE:CXX>:/Oi>
     )
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(utilities PRIVATE
+    target_compile_options(utilitiesASAN PRIVATE
+        -fno-exceptions
+        -fno-rtti
+        -fno-sanitize=all
+        -fsanitize=address
+        -fsanitize-address-outline-instrumentation
+        -fno-sanitize-address-use-after-scope
+        -D_GLIBCXX_DEBUG=0
+        -D_GLIBCXX_ASSERTIONS=0
+        -D_LIBCPP_ENABLE_ASSERTIONS=0
+        -D_ITERATOR_DEBUG_LEVEL=0
+    )
+    target_compile_options(utilitiesBOOT PRIVATE
         -fno-exceptions
         -fno-rtti
         -fno-sanitize=all

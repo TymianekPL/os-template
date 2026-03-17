@@ -1,4 +1,5 @@
 #include "kheap.h"
+#include "../dbg/kasan.h"
 #include "../kinit.h"
 #include "utils/kdbg.h"
 #include "utils/operations.h"
@@ -56,7 +57,7 @@ struct PoolReservation
      std::atomic_flag commitLock{};
      std::size_t committed{0};
 
-     void* Commit(std::size_t size) noexcept
+     void* NO_ASAN Commit(std::size_t size) noexcept
      {
           constexpr std::size_t PAGE = 4096;
           size = AlignUp(size, PAGE);
@@ -85,10 +86,13 @@ struct PoolReservation
           }
           else
           {
-               debugging::DbgWrite(u8"[kheap] ERROR: Pool reservation exhausted\r\n");
+               debugging::DbgWrite(
+                   u8"[kheap] ERROR: Pool reservation exhausted. Commit = {}, Committed = {}, Reserved = {}\r\n", size,
+                   committed, reserved);
           }
 
           commitLock.clear(std::memory_order::release);
+
           return ret;
      }
 };
@@ -163,7 +167,7 @@ static PoolSegment* GrowPool(PoolType type, std::size_t binIdx, std::size_t actu
      return seg;
 }
 
-void memory::KiHeapInitialise()
+void NO_ASAN memory::KiHeapInitialise()
 {
      debugging::DbgWrite(u8"[kheap] Initialising kernel heaps...\r\n");
 
@@ -182,7 +186,7 @@ void memory::KiHeapInitialise()
      debugging::DbgWrite(u8"[kheap] Heap init done. {} bins (demand-paged)\r\n", NUM_BINS);
 }
 
-void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
+void* NO_ASAN memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
 {
      if (!size)
      {
@@ -200,6 +204,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
           hdr->tag = tag;
           void* ret = hdr + 1;
           // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (free-list)\r\n", binIdx, ret);
+          KASANAllocateHeap(ret, alignedSize);
           return ret;
      }
 
@@ -219,6 +224,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
                hdr->lpNextFree = nullptr;
                void* ret = hdr + 1;
                // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (bump)\r\n", binIdx, ret);
+               KASANAllocateHeap(ret, alignedSize);
                return ret;
           }
      }
@@ -246,6 +252,7 @@ void* memory::ExAllocatePool(PoolType type, std::size_t size, std::uint32_t tag)
 
      void* ret = hdr + 1;
      // debugging::DbgWrite(u8"[kheap] alloc bin={} ptr={} (new-slab)\r\n", binIdx, ret);
+     KASANAllocateHeap(ret, alignedSize);
      return ret;
 }
 
@@ -260,6 +267,7 @@ void memory::ExFreePool(void* ptr)
           debugging::DbgWrite(u8"[kheap] DOUBLE-FREE at {}\r\n", ptr);
           return;
      }
+     KASANFreeHeap(ptr, hdr->size);
 
      hdr->isAllocated = false;
      hdr->tag = 0;

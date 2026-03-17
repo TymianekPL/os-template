@@ -11,10 +11,12 @@ add_executable(Kernel
     src/perf/sysmetrics.cpp
     src/object/object.cpp
     src/dbg/kassert.cpp
+    src/dbg/kasan.cpp
+    src/process/taskScheduler.cpp
 )
 set(KERNEL_IMAGE "kernel")
 
-target_link_libraries(Kernel PRIVATE utilities BootVideo)
+target_link_libraries(Kernel PRIVATE utilitiesASAN BootVideo)
 
 if(MSVC)
     # Remove runtime checks added by CMake in Debug mode
@@ -67,6 +69,9 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(Kernel PRIVATE
         -fno-sanitize=all
         -ffreestanding
+        -fsanitize=address
+        -fsanitize-address-outline-instrumentation
+        -fno-sanitize-address-use-after-scope
         -fno-stack-protector
         -fno-stack-check
         -fshort-wchar
@@ -104,6 +109,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wl,/CETCOMPAT:NO
         -Wl,/NODEFAULTLIB
     )
+
     
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_link_options(Kernel PRIVATE -Xlinker /SAFESEH:NO)

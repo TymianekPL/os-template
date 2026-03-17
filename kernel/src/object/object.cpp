@@ -6,6 +6,7 @@
 
 #include "../kinit.h"
 #include "../process/process.h"
+#include "../process/thread.h"
 #include "utils/kdbg.h"
 
 namespace object
@@ -914,4 +915,22 @@ namespace object
 
           return handle;
      }
+
+     template <>
+     void* ObGetBody<void>(kernel::ProcessControlBlock& pcb, Handle handle, ObjectType expectedType) noexcept
+     {
+          ObjectHeader* header = pcb.GetHandleTable().LookupHeader(handle);
+          if (!header || header->type != expectedType) return nullptr;
+          return header->BodyAs<void>();
+     }
+
+     template <>
+     process::Thread* ObGetBody<process::Thread>(kernel::ProcessControlBlock& pcb, Handle handle,
+                                                 ObjectType expectedType) noexcept
+     {
+          ObjectHeader* header = pcb.GetHandleTable().LookupHeader(handle);
+          if (!header || header->type != expectedType) return nullptr;
+          return header->BodyAs<process::Thread>();
+     }
+
 } // namespace object

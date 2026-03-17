@@ -16,7 +16,7 @@ namespace debugging
 
      template <typename T> struct SerialFormatter
      {
-          static void Write(const T& unnamed)
+          NO_ASAN static void Write(const T& unnamed)
           {
                static_assert(sizeof(unnamed) == 0, "SerialFormatter not implemented for this type");
           }
@@ -24,12 +24,12 @@ namespace debugging
 
      template <> struct SerialFormatter<char8_t>
      {
-          static void Write(char8_t value) { operations::WriteSerialCharacter(static_cast<char>(value)); }
+          NO_ASAN static void Write(char8_t value) { operations::WriteSerialCharacter(static_cast<char>(value)); }
      };
 
      template <> struct SerialFormatter<char8_t*>
      {
-          static void Write(const char8_t* value)
+          NO_ASAN static void Write(const char8_t* value)
           {
                while (value[0] != 0) operations::WriteSerialCharacter(static_cast<char>(*value++));
           }
@@ -37,7 +37,7 @@ namespace debugging
 
      template <> struct SerialFormatter<std::u8string>
      {
-          static void Write(const std::u8string& value)
+          NO_ASAN static void Write(const std::u8string& value)
           {
                for (char8_t c : value) operations::WriteSerialCharacter(static_cast<char>(c));
           }
@@ -45,7 +45,7 @@ namespace debugging
 
      template <> struct SerialFormatter<std::string>
      {
-          static void Write(const std::string& value)
+          NO_ASAN static void Write(const std::string& value)
           {
                for (char c : value) operations::WriteSerialCharacter(c);
           }
@@ -53,7 +53,7 @@ namespace debugging
 
      template <> struct SerialFormatter<const char8_t*>
      {
-          static void Write(const char8_t* value)
+          NO_ASAN static void Write(const char8_t* value)
           {
                while (value[0] != 0) operations::WriteSerialCharacter(static_cast<char>(*value++));
           }
@@ -61,12 +61,15 @@ namespace debugging
 
      template <> struct SerialFormatter<std::string_view>
      {
-          static void Write(const std::string_view value) { operations::WriteSerialString(value.data(), value.size()); }
+          NO_ASAN static void Write(const std::string_view value)
+          {
+               operations::WriteSerialString(value.data(), value.size());
+          }
      };
 
      template <std::integral TInteger> struct SerialFormatter<TInteger>
      {
-          static void Write(TInteger value)
+          NO_ASAN static void Write(TInteger value)
           {
                std::array<char, 32> buffer{};
                const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
@@ -76,12 +79,15 @@ namespace debugging
 
      template <> struct SerialFormatter<bool>
      {
-          static void Write(bool value) { operations::WriteSerialString(value ? "true" : "false", value ? 4 : 5); }
+          NO_ASAN static void Write(bool value)
+          {
+               operations::WriteSerialString(value ? "true" : "false", value ? 4 : 5);
+          }
      };
 
      template <typename T> struct SerialFormatter<T*>
      {
-          static void Write(T* ptr)
+          NO_ASAN static void Write(T* ptr)
           {
                std::array<char, 2 + (sizeof(std::uintptr_t) * 2) + 1> buffer{};
                auto* destination = buffer.data();
@@ -103,7 +109,7 @@ namespace debugging
 
      template <> struct SerialFormatter<std::byte>
      {
-          static void Write(std::byte value)
+          NO_ASAN static void Write(std::byte value)
           {
                std::array<char, 5> buffer{};
                auto* destination = buffer.data();
@@ -121,13 +127,13 @@ namespace debugging
 
      template <std::size_t N> struct SerialFormatter<char8_t[N]> // NOLINT
      {
-          static void Write(const char8_t (&value)[N]) // NOLINT
+          NO_ASAN static void Write(const char8_t (&value)[N]) // NOLINT
           {
                operations::WriteSerialString(value, N - 1);
           }
      };
 
-     template <typename... TArgs> void DbgWrite(const char8_t* format, TArgs&&... args)
+     template <typename... TArgs> NO_ASAN void DbgWrite(const char8_t* format, TArgs&&... args)
      {
           const char8_t* ptr = format;
           std::tuple<TArgs...> tupleArgs(std::forward<TArgs>(args)...);

@@ -288,6 +288,8 @@ namespace bootloader
      {
           this->_pageTableRoot = memory::paging::CreatePageTable(AllocatePageTableMemory);
 
+          const auto* emptyASANPage = AllocatePageTableMemory(0x1000);
+
           if (this->_pageTableRoot == 0)
           {
                this->_lastStatus = EFI_OUT_OF_RESOURCES;
@@ -305,6 +307,23 @@ namespace bootloader
           {
                this->_lastStatus = EFI_OUT_OF_RESOURCES;
                return false;
+          }
+
+          for (std::uintptr_t addr = 0xffff'a000'eff0'0000; addr < 0xffffa000f0000000; addr += 0x1000) // kernel stacks
+          {
+               memory::PageMapping mapping{};
+               mapping.virtualAddress = addr;
+               mapping.physicalAddress = reinterpret_cast<std::uintptr_t>(emptyASANPage);
+               mapping.size = 0x1000;
+               mapping.writable = true;
+               mapping.userAccessible = false;
+               mapping.cacheDisable = false;
+
+               if (!memory::paging::MapPage(this->_pageTableRoot, mapping, AllocatePageTableMemory))
+               {
+                    this->_lastStatus = EFI_OUT_OF_RESOURCES;
+                    return false;
+               }
           }
 
           constexpr std::size_t stackSize = 1024ULL * 1024ULL; // 1MB

@@ -1,5 +1,6 @@
 #include <utils/cpu.h>
 #include <utils/identify.h>
+#include <utils/operations.h>
 
 #if defined(ARCH_ARM64) && defined(COMPILER_MSVC)
 #include <intrin.h>
@@ -76,8 +77,8 @@ namespace cpu
      static Tss64 sTss;
      static IdtEntry sIdt[256];
 
-     static void SetGdtEntry(std::size_t index, std::uint32_t base, std::uint32_t limit, std::uint8_t access,
-                             std::uint8_t granularity)
+     static NO_ASAN void SetGdtEntry(std::size_t index, std::uint32_t base, std::uint32_t limit, std::uint8_t access,
+                                     std::uint8_t granularity)
      {
           sGdt[index].baseLow = base & 0xFFFF;
           sGdt[index].baseMiddle = (base >> 16) & 0xFF;
@@ -87,7 +88,7 @@ namespace cpu
           sGdt[index].access = access;
      }
 
-     static void SetTssEntry(std::size_t index, std::uintptr_t tssAddress)
+     static NO_ASAN void SetTssEntry(std::size_t index, std::uintptr_t tssAddress)
      {
           std::uint64_t base = tssAddress;
           std::uint32_t limit = sizeof(Tss64) - 1;
@@ -105,8 +106,8 @@ namespace cpu
           upper->baseLow = (base >> 48) & 0xFFFF;
      }
 
-     static void SetIdtEntry(std::size_t index, std::uintptr_t handler, std::uint16_t selector, std::uint8_t ist,
-                             std::uint8_t typeAttr)
+     static NO_ASAN void SetIdtEntry(std::size_t index, std::uintptr_t handler, std::uint16_t selector,
+                                     std::uint8_t ist, std::uint8_t typeAttr)
      {
           sIdt[index].offsetLow = handler & 0xFFFF;
           sIdt[index].offsetMiddle = (handler >> 16) & 0xFFFF;
@@ -119,10 +120,10 @@ namespace cpu
 
      using InterruptRoutine = void (*)();
 
-     extern "C" InterruptRoutine KiInterruptVectorTable[256];
-     extern "C" void LoadTaskRegister(std::uint16_t selector);
+     extern "C" NO_ASAN InterruptRoutine KiInterruptVectorTable[256];
+     extern "C" NO_ASAN void LoadTaskRegister(std::uint16_t selector);
 
-     void Initialise()
+     NO_ASAN void Initialise()
      {
           std::memset(sGdt, 0, sizeof(sGdt));
           std::memset(&sTss, 0, sizeof(sTss));

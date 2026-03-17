@@ -1,6 +1,6 @@
 add_library(BootVideo SHARED src/main.cpp src/font.cpp)
 target_include_directories(BootVideo PUBLIC include)
-target_link_libraries(BootVideo PRIVATE utilities)
+target_link_libraries(BootVideo PRIVATE utilitiesBOOT)
 
 if(MSVC)
     # Remove runtime checks added by CMake in Debug mode
