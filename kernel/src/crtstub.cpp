@@ -72,3 +72,9 @@ const void* __stdcall __std_find_trivial_1(const void* _First, const void* _Last
           if (*first == value) return first;
      return last;
 }
+
+extern "C" int atexit(void (*function)()) // NOLINT
+{
+     (void)function;
+     return 0;
+}

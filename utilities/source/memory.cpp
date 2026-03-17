@@ -1,4 +1,5 @@
 #include <utils/identify.h>
+#include <utils/operations.h>
 
 #ifdef ARCH_ARM64
 #include <arm_neon.h>
@@ -14,7 +15,7 @@ extern "C" void* __cdecl memmove(_Out_writes_bytes_all_(_Size) void* _Dst, _In_r
 }
 
 #pragma function(memset)
-extern "C" void* __cdecl memset(_Out_ void* _Dst, _In_ int _Val, _In_ size_t _Size)
+NO_ASAN extern "C" void* __cdecl memset(_Out_ void* _Dst, _In_ int _Val, _In_ size_t _Size)
 {
      auto* dst = static_cast<std::byte*>(_Dst);
 
@@ -95,8 +96,8 @@ extern "C" void* __cdecl memset(_Out_ void* _Dst, _In_ int _Val, _In_ size_t _Si
 }
 
 #pragma function(memcpy)
-extern "C" void* __cdecl memcpy(_Out_writes_bytes_all_(_Size) void* _Dst, _In_reads_bytes_(_Size) void const* _Src,
-                                _In_ size_t _Size)
+NO_ASAN extern "C" void* __cdecl memcpy(_Out_writes_bytes_all_(_Size) void* _Dst,
+                                        _In_reads_bytes_(_Size) void const* _Src, _In_ size_t _Size)
 {
      auto* dst = static_cast<std::byte*>(_Dst);
      const auto* src = static_cast<const std::byte*>(_Src);

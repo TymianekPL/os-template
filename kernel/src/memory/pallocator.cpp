@@ -4,15 +4,16 @@
 #include "utils/arch.h"
 #include "utils/identify.h"
 #include "utils/memory.h"
+#include "utils/operations.h"
 
 namespace memory
 {
      constexpr std::size_t PageSize = 0x1000;
      constexpr std::size_t InvalidPFN = static_cast<std::size_t>(-1);
 
-     bool PhysicalMemoryAllocator::Initialise(structures::LinkedList<arch::MemoryDescriptor> memoryDescriptors,
-                                              std::uintptr_t kernelPhysicalBase, std::uintptr_t kernelVirtualBase,
-                                              std::size_t kernelSize)
+     NO_ASAN bool PhysicalMemoryAllocator::Initialise(structures::LinkedList<arch::MemoryDescriptor> memoryDescriptors,
+                                                      std::uintptr_t kernelPhysicalBase,
+                                                      std::uintptr_t kernelVirtualBase, std::size_t kernelSize)
      {
           std::size_t totalPages{};
           std::uintptr_t minPage = ~0ull;
@@ -155,7 +156,7 @@ namespace memory
           return true;
      }
 
-     void PhysicalMemoryAllocator::MarkExistingPageTablesPreInit()
+     NO_ASAN void PhysicalMemoryAllocator::MarkExistingPageTablesPreInit()
      {
           std::uintptr_t pageTableRootPhys = memory::paging::GetCurrentPageTable();
 
@@ -428,7 +429,7 @@ namespace memory
 #endif
      }
 
-     void PhysicalMemoryAllocator::MarkPageActive(std::uintptr_t physicalAddress, PFNUse use)
+     NO_ASAN void PhysicalMemoryAllocator::MarkPageActive(std::uintptr_t physicalAddress, PFNUse use)
      {
           std::size_t pfnIndex = physicalAddress / PageSize;
 
@@ -453,7 +454,7 @@ namespace memory
           IncrementUseCounter(use);
      }
 
-     std::uintptr_t PhysicalMemoryAllocator::AllocatePage(PFNUse use)
+     NO_ASAN std::uintptr_t PhysicalMemoryAllocator::AllocatePage(PFNUse use)
      {
           structures::SingleListEntry<PFNEntry*>* node = zeroList.Pop();
 
@@ -487,7 +488,7 @@ namespace memory
           return (dbIdx + basePfn) * PageSize;
      }
 
-     std::uintptr_t PhysicalMemoryAllocator::AllocatePageOverwrite(PFNUse use)
+     NO_ASAN std::uintptr_t PhysicalMemoryAllocator::AllocatePageOverwrite(PFNUse use)
      {
           structures::SingleListEntry<PFNEntry*>* node = freeList.Pop();
 
@@ -519,7 +520,7 @@ namespace memory
           return (dbIdx + basePfn) * PageSize;
      }
 
-     void PhysicalMemoryAllocator::ReleaseZeroPage(std::uintptr_t address)
+     NO_ASAN void PhysicalMemoryAllocator::ReleaseZeroPage(std::uintptr_t address)
      {
           std::size_t pfnIndex = address / PageSize;
 
@@ -550,7 +551,7 @@ namespace memory
           }
      }
 
-     void PhysicalMemoryAllocator::ReleaseFreePage(std::uintptr_t address)
+     NO_ASAN void PhysicalMemoryAllocator::ReleaseFreePage(std::uintptr_t address)
      {
           std::size_t pfnIndex = address / PageSize;
 
@@ -581,7 +582,7 @@ namespace memory
           }
      }
 
-     void PhysicalMemoryAllocator::IncrementUseCounter(PFNUse use, std::memory_order order)
+     NO_ASAN void PhysicalMemoryAllocator::IncrementUseCounter(PFNUse use, std::memory_order order)
      {
           switch (use)
           {
@@ -602,7 +603,7 @@ namespace memory
           }
      }
 
-     void PhysicalMemoryAllocator::DecrementUseCounter(PFNUse use, std::memory_order order)
+     NO_ASAN void PhysicalMemoryAllocator::DecrementUseCounter(PFNUse use, std::memory_order order)
      {
           switch (use)
           {
@@ -623,5 +624,5 @@ namespace memory
           }
      }
 
-     PhysicalMemoryAllocator physicalAllocator{};
+     NO_ASAN PhysicalMemoryAllocator physicalAllocator{};
 } // namespace memory

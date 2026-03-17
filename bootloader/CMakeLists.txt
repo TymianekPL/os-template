@@ -60,7 +60,7 @@ add_executable(Bootloader
 )
 
 target_include_directories(Bootloader PRIVATE ${UEFI_INCLUDES})
-target_link_libraries(Bootloader PRIVATE utilities)
+target_link_libraries(Bootloader PRIVATE utilitiesBOOT)
 
 if(MSVC)
     # Remove runtime checks added by CMake in Debug mode

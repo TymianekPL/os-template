@@ -1,5 +1,6 @@
 #include <utils/identify.h>
 #include <utils/memory.h>
+#include <utils/operations.h>
 
 #if defined(ARCH_X8664)
 #include <immintrin.h>
@@ -465,7 +466,7 @@ namespace memory::paging
           auto* pml4 = static_cast<X64PageEntry*>(allocator(0x1000));
           if (pml4 == nullptr) return 0;
 
-          for (std::size_t i = 0; i < 512; ++i) reinterpret_cast<std::uint64_t*>(pml4)[i] = 0;
+          std::memset(pml4, 0, 0x1000);
 
           return reinterpret_cast<std::uintptr_t>(pml4);
      }
@@ -598,7 +599,7 @@ namespace memory::paging
           return true;
      }
 
-     void LoadPageTable(std::uintptr_t pageTableRoot)
+     NO_ASAN void LoadPageTable(std::uintptr_t pageTableRoot)
      {
 #ifdef COMPILER_MSVC
           __writecr3(pageTableRoot);
@@ -607,7 +608,7 @@ namespace memory::paging
 #endif
      }
 
-     std::uintptr_t GetCurrentPageTable()
+     NO_ASAN std::uintptr_t GetCurrentPageTable()
      {
 #ifdef COMPILER_MSVC
           return __readcr3();
@@ -618,7 +619,7 @@ namespace memory::paging
 #endif
      }
 
-     void InvalidatePage(std::uintptr_t virtualAddress)
+     NO_ASAN void InvalidatePage(std::uintptr_t virtualAddress)
      {
 #ifdef COMPILER_MSVC
           __invlpg(reinterpret_cast<void*>(virtualAddress));
@@ -627,13 +628,13 @@ namespace memory::paging
 #endif
      }
 
-     void FlushTLB()
+     NO_ASAN void FlushTLB()
      {
           std::uintptr_t cr3 = GetCurrentPageTable();
           LoadPageTable(cr3);
      }
 
-     void EnablePaging()
+     NO_ASAN void EnablePaging()
      {
 #ifdef COMPILER_MSVC
           std::uint64_t cr4 = __readcr4();
@@ -689,7 +690,7 @@ namespace memory::paging
           std::uint64_t noExecute : 1;
      };
 
-     std::uintptr_t CreatePageTable(void* (*allocator)(std::size_t))
+     NO_ASAN std::uintptr_t CreatePageTable(void* (*allocator)(std::size_t))
      {
           auto* pdpt = static_cast<X86PageEntry*>(allocator(0x1000));
           if (!pdpt) return 0;
@@ -699,7 +700,7 @@ namespace memory::paging
           return reinterpret_cast<std::uintptr_t>(pdpt);
      }
 
-     bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
+     NO_ASAN bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
      {
           auto* pdpt = reinterpret_cast<X86PageEntry*>(pageTableRoot);
 
@@ -751,8 +752,8 @@ namespace memory::paging
           return true;
      }
 
-     bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
-                                  void* (*allocator)(std::size_t))
+     NO_ASAN bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
+                                          void* (*allocator)(std::size_t))
      {
           // For x86-32, use top of 32-bit address space
           constexpr std::uintptr_t DIRECT_MAP_OFFSET = 0xC0000000UL;
@@ -800,27 +801,30 @@ namespace memory::paging
           return true;
      }
 
-     void LoadPageTable(std::uintptr_t pageTableRoot) { asm volatile("mov %0, %%cr3" ::"r"(pageTableRoot) : "memory"); }
+     NO_ASAN void LoadPageTable(std::uintptr_t pageTableRoot)
+     {
+          asm volatile("mov %0, %%cr3" ::"r"(pageTableRoot) : "memory");
+     }
 
-     std::uintptr_t GetCurrentPageTable()
+     NO_ASAN std::uintptr_t GetCurrentPageTable()
      {
           std::uintptr_t cr3{};
           asm volatile("mov %%cr3, %0" : "=r"(cr3));
           return cr3;
      }
 
-     void InvalidatePage(std::uintptr_t virtualAddress)
+     NO_ASAN void InvalidatePage(std::uintptr_t virtualAddress)
      {
           asm volatile("invlpg (%0)" ::"r"(virtualAddress) : "memory");
      }
 
-     void FlushTLB()
+     NO_ASAN void FlushTLB()
      {
           std::uintptr_t cr3 = GetCurrentPageTable();
           LoadPageTable(cr3);
      }
 
-     void EnablePaging()
+     NO_ASAN void EnablePaging()
      {
           std::uint32_t cr4 = 0;
           asm volatile("mov %%cr4, %0" : "=r"(cr4));
@@ -857,7 +861,7 @@ namespace memory::paging
           std::uint64_t ignored : 9;
      };
 
-     std::uintptr_t CreatePageTable(void* (*allocator)(std::size_t))
+     NO_ASAN std::uintptr_t CreatePageTable(void* (*allocator)(std::size_t))
      {
           auto* l0 = static_cast<ARMPageEntry*>(allocator(0x1000));
           if (!l0) return 0;
@@ -867,7 +871,7 @@ namespace memory::paging
           return reinterpret_cast<std::uintptr_t>(l0);
      }
 
-     bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
+     NO_ASAN bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
      {
           auto* l0 = reinterpret_cast<ARMPageEntry*>(pageTableRoot);
 
@@ -939,8 +943,8 @@ namespace memory::paging
           return true;
      }
 
-     bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
-                                  void* (*allocator)(std::size_t))
+     NO_ASAN bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
+                                          void* (*allocator)(std::size_t))
      {
           constexpr std::uintptr_t DIRECT_MAP_OFFSET = 0xFFFF800000000000ULL;
           constexpr std::size_t BLOCK_SIZE = 0x200000;
@@ -997,7 +1001,7 @@ namespace memory::paging
           return true;
      }
 
-     void LoadPageTable(std::uintptr_t pageTableRoot)
+     NO_ASAN void LoadPageTable(std::uintptr_t pageTableRoot)
      {
 #ifdef COMPILER_MSVC
           std::uint64_t tcr = 0;
@@ -1048,7 +1052,7 @@ namespace memory::paging
 #endif
      }
 
-     std::uintptr_t GetCurrentPageTable()
+     NO_ASAN std::uintptr_t GetCurrentPageTable()
      {
 #ifdef COMPILER_MSVC
           return ::_ReadStatusReg(ARM64_SYSREG(3, 0, 2, 0, 0));
@@ -1059,7 +1063,7 @@ namespace memory::paging
 #endif
      }
 
-     void InvalidatePage(std::uintptr_t virtualAddress)
+     NO_ASAN void InvalidatePage(std::uintptr_t virtualAddress)
      {
 #ifdef COMPILER_MSVC
           ::__isb(_ARM64_BARRIER_SY);
@@ -1070,7 +1074,7 @@ namespace memory::paging
 #endif
      }
 
-     void FlushTLB()
+     NO_ASAN void FlushTLB()
      {
 #ifdef COMPILER_MSVC
           ::__isb(_ARM64_BARRIER_SY);
@@ -1081,7 +1085,7 @@ namespace memory::paging
 #endif
      }
 
-     void EnablePaging()
+     NO_ASAN void EnablePaging()
      {
 #ifdef COMPILER_MSVC
           std::uint64_t sctlr = ::_ReadStatusReg(ARM64_SYSREG(3, 0, 1, 0, 0));

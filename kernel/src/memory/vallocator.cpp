@@ -3,6 +3,11 @@
 #include <algorithm>
 #include "utils/kdbg.h"
 
+static constexpr std::size_t AlignUp(std::size_t value, std::size_t align)
+{
+     return (value + align - 1) & ~(align - 1);
+}
+
 namespace memory
 {
      constexpr std::size_t PAGE_SIZE = 4096;
@@ -413,7 +418,8 @@ namespace memory
                     this->_stats.commitCharge.fetch_sub(z->entry.size, std::memory_order::relaxed);
           }
 
-          if (z->entry.immediatePhysical && _stats.totalImmediateBytes.load(std::memory_order::relaxed) >= z->entry.size)
+          if (z->entry.immediatePhysical &&
+              _stats.totalImmediateBytes.load(std::memory_order::relaxed) >= z->entry.size)
           {
                this->_stats.totalImmediateBytes.fetch_sub(z->entry.size, std::memory_order::relaxed);
           }
@@ -480,9 +486,10 @@ namespace memory
           InorderTraversal(node->right, callback);
      }
 
-     bool VirtualMemoryAllocator::ReserveVirtualMemoryFixed(std::uintptr_t baseAddress, std::size_t size,
-                                                            MemoryProtection protection, PFNUse use)
+     NO_ASAN bool VirtualMemoryAllocator::ReserveVirtualMemoryFixed(std::uintptr_t baseAddress, std::size_t size,
+                                                                    MemoryProtection protection, PFNUse use)
      {
+          size = AlignUp(size, PAGE_SIZE);
           VADEntry entry(baseAddress, size, VADMemoryState::Reserved, protection, use);
           return Insert(entry);
      }
@@ -490,6 +497,7 @@ namespace memory
      bool VirtualMemoryAllocator::ReserveVirtualMemoryFixedAsCommitted(std::uintptr_t baseAddress, std::size_t size,
                                                                        MemoryProtection protection, PFNUse use)
      {
+          size = AlignUp(size, PAGE_SIZE);
           VADEntry entry(baseAddress, size, VADMemoryState::Committed, protection, use);
           return Insert(entry);
      }
@@ -532,9 +540,11 @@ namespace memory
           return candidateAddress;
      }
 
-     std::uintptr_t VirtualMemoryAllocator::ReserveVirtualMemory(std::size_t size, MemoryProtection protection,
-                                                                 PFNUse use)
+     NO_ASAN std::uintptr_t VirtualMemoryAllocator::ReserveVirtualMemory(std::size_t size, MemoryProtection protection,
+                                                                         PFNUse use)
      {
+          size = AlignUp(size, PAGE_SIZE);
+
           std::uintptr_t baseAddress = FindFreeRegion(size, 0);
           if (baseAddress == 0)
           {
@@ -559,9 +569,11 @@ namespace memory
           return 0;
      }
 
-     std::uintptr_t VirtualMemoryAllocator::ReserveVirtualMemoryAt(std::uintptr_t hint, std::size_t size,
-                                                                   MemoryProtection protection, PFNUse use)
+     NO_ASAN std::uintptr_t VirtualMemoryAllocator::ReserveVirtualMemoryAt(std::uintptr_t hint, std::size_t size,
+                                                                           MemoryProtection protection, PFNUse use)
      {
+          size = AlignUp(size, PAGE_SIZE);
+
           std::uintptr_t baseAddress = FindFreeRegion(size, hint);
           if (baseAddress == 0)
           {
@@ -802,12 +814,13 @@ namespace memory
 
           node->entry.state = VADMemoryState::Committed;
 
-          const std::size_t newCommitted = _stats.totalCommittedBytes.fetch_add(size, std::memory_order::relaxed) + size;
+          const std::size_t newCommitted =
+              _stats.totalCommittedBytes.fetch_add(size, std::memory_order::relaxed) + size;
           _stats.commitCharge.fetch_add(size, std::memory_order::relaxed);
 
           std::size_t currentPeak = _stats.peakCommittedBytes.load(std::memory_order::relaxed);
-          while (newCommitted > currentPeak &&
-                 !_stats.peakCommittedBytes.compare_exchange_weak(currentPeak, newCommitted, std::memory_order::relaxed))
+          while (newCommitted > currentPeak && !_stats.peakCommittedBytes.compare_exchange_weak(
+                                                   currentPeak, newCommitted, std::memory_order::relaxed))
           {
           }
 
@@ -976,7 +989,7 @@ namespace memory
           return SplitVADForDecommit(node, baseAddress, size);
      }
 
-     bool VirtualMemoryAllocator::CommitMemory(std::uintptr_t baseAddress, std::size_t size, bool immediate)
+     NO_ASAN bool VirtualMemoryAllocator::CommitMemory(std::uintptr_t baseAddress, std::size_t size, bool immediate)
      {
           if (size == 0)
           {
@@ -987,7 +1000,8 @@ namespace memory
           VADNode* node = FindContaining(baseAddress);
           if (node == nullptr)
           {
-               debugging::DbgWrite(u8"[CommitMemory] FindContaining(baseAddress) == nullptr\r\n");
+               debugging::DbgWrite(u8"[CommitMemory] FindContaining({}) == nullptr\r\n",
+                                   reinterpret_cast<void*>(baseAddress));
                return false;
           }
 
@@ -1005,7 +1019,8 @@ namespace memory
           VADNode* node = FindContaining(baseAddress);
           if (node == nullptr)
           {
-               debugging::DbgWrite(u8"[DecommitMemory] FindContaining(baseAddress) == nullptr\r\n");
+               debugging::DbgWrite(u8"[DecommitMemory] FindContaining({}) == nullptr\r\n",
+                                   reinterpret_cast<void*>(baseAddress));
                return false;
           }
 

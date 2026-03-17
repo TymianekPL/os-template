@@ -3,12 +3,14 @@
 #include <memory>
 #include "BootVideo.h"
 #include "cpu/interrupts.h"
+#include "dbg/kasan.h"
 #include "kinit.h"
 #include "memory/kheap.h"
 #include "memory/pallocator.h"
 #include "memory/vallocator.h"
 #include "object/object.h"
 #include "process/process.h"
+#include "process/taskScheduler.h"
 #include "utils/arch.h"
 #include "utils/cpu.h"
 #include "utils/identify.h"
@@ -27,6 +29,8 @@ void KiIdleLoop()
 {
      while (true)
      {
+          VidExchangeBuffers();
+
           operations::EnableInterrupts();
           operations::Yield();
           operations::Yield();
@@ -36,7 +40,6 @@ void KiIdleLoop()
 
           operations::EnableInterrupts();
           operations::Halt();
-          VidExchangeBuffers();
      }
 }
 void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
@@ -49,11 +52,18 @@ void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
      while (true) operations::Halt();
 }
 
-void KiInitialise(arch::LoaderParameterBlock* param)
+extern "C" void __asan_init();
+
+void NO_ASAN KiInitialise(arch::LoaderParameterBlock* param)
 {
      g_bootCycles = operations::ReadCurrentCycles();
      g_loaderBlock = param;
      auto framebuffer = param->framebuffer;
+
+     g_stackBase = param->stackVirtualBase;
+     g_stackSize = param->stackSize;
+     g_imageBase = param->kernelVirtualBase;
+     g_imageSize = param->kernelSize;
 
      cpu::Initialise();
 
@@ -350,8 +360,60 @@ constexpr const char8_t* FormatSize(std::size_t size, std::size_t& outVal)
 
 static std::size_t AlignUp(std::size_t size, std::size_t align) { return (size + align - 1) & ~(align - 1); }
 
-extern "C" int KiStartup(arch::LoaderParameterBlock* param)
+#ifdef ARCH_X8664
+constexpr std::uint16_t COM1_PORT = 0x3F8;
+
+#ifdef COMPILER_MSVC // MSVC vvv
+inline void Out8(std::uint16_t port, std::uint8_t value) { __outbyte(port, value); }
+
+inline std::uint8_t In8(std::uint16_t port) { return static_cast<std::uint8_t>(__inbyte(port)); }
+#elifdef COMPILER_CLANG // ^^^ MSVC / Clang vvv
+inline void Out8(std::uint16_t port, std::uint8_t value) { asm volatile("outb %0, %1" : : "a"(value), "Nd"(port)); }
+
+inline std::uint8_t In8(std::uint16_t port)
 {
+     std::uint8_t value{};
+     asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
+     return value;
+}
+#endif                  // ^^^ Clang
+
+bool SerialInterruptHandler([[maybe_unused]] cpu::IInterruptFrame& frame)
+{
+     const std::uint8_t iir = In8(COM1_PORT + 2);
+     if (iir & 0x01) return false;
+
+     switch ((iir >> 1) & 0x3)
+     {
+     case 0x2:
+     {
+          while (In8(COM1_PORT + 5) & 0x01) operations::SerialPushCharacter(static_cast<char>(In8(COM1_PORT)));
+          break;
+     }
+
+     case 0x1:
+     {
+          operations::SerialHoldLineHigh();
+          break;
+     }
+     default: break;
+     }
+
+     return true;
+}
+#endif
+
+void meowwww()
+{
+     int* x = new int(123);
+     delete x;
+     debugging::DbgWrite(u8"Allocated int at {}, value = {}\r\n", reinterpret_cast<void*>(x), *x);
+}
+
+extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
+{
+     __asan_init();
+
      if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
      cpu::g_systemBootTimeOffsetSeconds = param->bootTimeSeconds;
 
@@ -371,8 +433,20 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
                                   .scalineSize = framebuffer.scanlineSize,
                                   .optionalBackbuffer = bbuffer});
 
+     kasan::KeInitialise();
      memory::KiHeapInitialise();
      object::KeInitialiseOb();
+     process::KiInitialiseTaskScheduler(0, reinterpret_cast<void*>(KiIdleLoop), param->stackVirtualBase);
+
+#ifdef ARCH_X8664
+     constexpr cpu::InterruptVector SerialVector = 0x24;
+     KeRegisterInterruptHandler(0x4, SerialVector, SerialInterruptHandler);
+#endif
+     operations::InitialiseSerial();
+     debugging::DbgWrite(u8"mem regions:\r\n");
+     debugging::DbgWrite(u8"  Stack: Base={}, Size={}\r\n", reinterpret_cast<void*>(g_stackBase), g_stackSize);
+     debugging::DbgWrite(u8"  Image: Base={}, Size={}\r\n", reinterpret_cast<void*>(g_imageBase), g_imageSize);
+     KASANAllocateHeap(bbuffer, framebuffer.totalSize);
 
      while (true)
      {
@@ -544,7 +618,7 @@ extern "C" int KiStartup(arch::LoaderParameterBlock* param)
           }
           case 'i':
           {
-               *reinterpret_cast<volatile char*>(0x8493247389) = 123;
+               meowwww();
                break;
           }
           case 'I':

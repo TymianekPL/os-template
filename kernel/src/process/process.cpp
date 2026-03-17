@@ -56,8 +56,9 @@ namespace kernel
      void ProcessControlBlock::SetKernelStack(std::uintptr_t base) { this->_kernelStackBase = base; }
      void ProcessControlBlock::SetUserStack(std::uintptr_t base) { this->_userStackBase = base; }
 
-     void* ProcessControlBlock::AllocateVirtualMemory(void* address, std::size_t size, memory::AllocationFlags flags,
-                                                      memory::MemoryProtection protection)
+     NO_ASAN void* ProcessControlBlock::AllocateVirtualMemory(void* address, std::size_t size,
+                                                              memory::AllocationFlags flags,
+                                                              memory::MemoryProtection protection)
      {
           if (size == 0)
           {

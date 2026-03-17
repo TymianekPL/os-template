@@ -8,7 +8,7 @@ constexpr std::uint32_t BugCheckColour = 0x1e1e9e;
 static std::uint32_t g_currentPosition = 0;
 static std::uint32_t g_currentLine = 0;
 
-static void KiDbgPrintString(const char8_t* string)
+NO_ASAN static void KiDbgPrintString(const char8_t* string)
 {
      debugging::DbgWrite(u8"{}", string);
      std::size_t i{};
@@ -18,7 +18,7 @@ static void KiDbgPrintString(const char8_t* string)
      g_currentPosition += (i * 8);
 }
 
-static void KiDbgPrintStringLn(const char8_t* string)
+NO_ASAN static void KiDbgPrintStringLn(const char8_t* string)
 {
      debugging::DbgWrite(u8"{}\r\n", string);
      for (std::size_t i = 0; string[i]; i++)
@@ -28,7 +28,7 @@ static void KiDbgPrintStringLn(const char8_t* string)
      g_currentPosition = 0;
 }
 
-static void KiDbgPrintHex(std::uintptr_t value)
+NO_ASAN static void KiDbgPrintHex(std::uintptr_t value)
 {
      std::array<char, 17> buffer{};
      auto [p, ec] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, 16);
@@ -36,19 +36,19 @@ static void KiDbgPrintHex(std::uintptr_t value)
 
      std::size_t len = static_cast<std::size_t>(p - buffer.data());
 
-     for (std::size_t i = len; i < 16; i++)
+     for (std::size_t i = 0; i < 16 - len; ++i)
           VidDrawChar(10 + g_currentPosition + (i * 8), 10 + (g_currentLine * 10), '0', 0xFFFFFF, 1);
-     for (std::size_t i = 0; i < len; i++)
-          VidDrawChar(10 + g_currentPosition + ((len - 1 - i) * 8), 10 + (g_currentLine * 10), buffer[len - 1 - i],
-                      0xFFFFFF, 1);
+
+     for (std::size_t i = 0; i < len; ++i)
+          VidDrawChar(10 + g_currentPosition + ((16 - len + i) * 8), 10 + (g_currentLine * 10), buffer[i], 0xFFFFFF, 1);
 
      debugging::DbgWrite(u8"{}", reinterpret_cast<void*>(value));
      g_currentPosition += (16 * 8);
 }
 
-void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame);
+NO_ASAN void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame);
 
-void dbg::KeBugCheck(const cpu::IInterruptFrame& frame)
+NO_ASAN void dbg::KeBugCheck(const cpu::IInterruptFrame& frame)
 {
      operations::DisableInterrupts();
 
@@ -109,7 +109,7 @@ struct InterruptFrame
      std::uint64_t rip, cs, rflags, rsp, ss;
 };
 
-void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
+NO_ASAN void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
 {
      const auto& f = *static_cast<const InterruptFrame*>(frame.GetContext());
 
@@ -180,7 +180,7 @@ void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
      KiDbgPrintStringLn(u8"");
 }
 
-dbg::BugCheckInfo dbg::TranslateBugCheck(const cpu::IInterruptFrame& frame)
+NO_ASAN dbg::BugCheckInfo dbg::TranslateBugCheck(const cpu::IInterruptFrame& frame)
 {
      BugCheckInfo info{};
      const auto& f = *static_cast<const InterruptFrame*>(frame.GetContext());
@@ -427,7 +427,7 @@ static constexpr std::uint32_t FscSyncExternal = 0x10;
 static constexpr std::uint32_t FscAlignmentFault = 0x21;
 static constexpr std::uint32_t FscTLBConflict = 0x30;
 
-static const char8_t* FscDescription(std::uint32_t fsc)
+NO_ASAN static const char8_t* FscDescription(std::uint32_t fsc)
 {
      switch (fsc & 0x3F)
      {
@@ -448,7 +448,7 @@ static const char8_t* FscDescription(std::uint32_t fsc)
      }
 }
 
-void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
+NO_ASAN void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
 {
      const auto& f = *static_cast<const InterruptFrame*>(frame.GetContext());
 
@@ -490,7 +490,7 @@ void KiDbgDumpRegisters(const cpu::IInterruptFrame& frame)
 #undef PAIR
 }
 
-dbg::BugCheckInfo dbg::TranslateBugCheck(const cpu::IInterruptFrame& frame)
+NO_ASAN dbg::BugCheckInfo dbg::TranslateBugCheck(const cpu::IInterruptFrame& frame)
 {
      BugCheckInfo info{};
      const auto& f = *static_cast<const InterruptFrame*>(frame.GetContext());

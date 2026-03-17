@@ -1,5 +1,8 @@
 #include <utils/identify.h>
 #include <utils/operations.h>
+#include <array>
+#include <atomic>
+#include "utils/kdbg.h"
 
 #if defined(ARCH_ARM64) && defined(COMPILER_MSVC)
 #include <intrin.h>
@@ -10,59 +13,127 @@
 namespace
 {
      constexpr std::uint16_t COM1_PORT = 0x3F8;
+     constexpr std::size_t SERIAL_BUFFER_SIZE = 1024;
 
-#ifdef COMPILER_MSVC // MSVC vvv
-     inline void Out8(std::uint16_t port, std::uint8_t value) { __outbyte(port, value); }
+     std::array<char, SERIAL_BUFFER_SIZE> TxBuffer{};
+     std::array<char, SERIAL_BUFFER_SIZE> RxBuffer{};
 
-     inline std::uint8_t In8(std::uint16_t port) { return static_cast<std::uint8_t>(__inbyte(port)); }
-#elifdef COMPILER_CLANG // ^^^ MSVC / Clang vvv
-     inline void Out8(std::uint16_t port, std::uint8_t value)
+     std::atomic<std::size_t> TxHead{};
+     std::atomic<std::size_t> TxTail{};
+
+     std::atomic<std::size_t> RxHead{};
+     std::atomic<std::size_t> RxTail{};
+
+     std::atomic<bool> g_serialInitialised{false};
+
+#ifdef COMPILER_MSVC
+     NO_ASAN inline void Out8(std::uint16_t port, std::uint8_t value) { __outbyte(port, value); }
+     NO_ASAN inline std::uint8_t In8(std::uint16_t port) { return static_cast<std::uint8_t>(__inbyte(port)); }
+#elifdef COMPILER_CLANG
+     NO_ASAN inline void Out8(std::uint16_t port, std::uint8_t value)
      {
           asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
      }
-
-     inline std::uint8_t In8(std::uint16_t port)
+     NO_ASAN inline std::uint8_t In8(std::uint16_t port)
      {
           std::uint8_t value{};
           asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
           return value;
      }
-#endif                  // ^^^ Clang
+#endif
 } // namespace
 
-void operations::WriteSerialCharacter(char value)
+NO_ASAN void operations::InitialiseSerial()
 {
-     while ((In8(COM1_PORT + 5) & 0x20) == 0) {}
+     debugging::DbgWrite(u8"Initialising serial port COM1\r\n");
+
+     Out8(COM1_PORT + 1, 0x00); // disable interrupts
+     Out8(COM1_PORT + 3, 0x80); // enable DLAB
+     Out8(COM1_PORT + 0, 0x03); // baud rate divisor low byte (38400)
+     Out8(COM1_PORT + 1, 0x00); // baud rate divisor high byte
+     Out8(COM1_PORT + 3, 0x03); // 8 bits, no parity, one stop bit
+     Out8(COM1_PORT + 2, 0xC7); // FIFO enabled, clear TX/RX, 14-byte threshold
+     Out8(COM1_PORT + 4, 0x0B); // IRQs enabled, RTS/DSR set
+     Out8(COM1_PORT + 1, 0x03); // enable interrupts: RX and TX
+
+     g_serialInitialised.store(true, std::memory_order_release);
+}
+
+NO_ASAN void PushRxChar(char c)
+{
+     const auto head = RxHead.load(std::memory_order_relaxed);
+     const auto next = (head + 1) % SERIAL_BUFFER_SIZE;
+     if (next != RxTail.load(std::memory_order_acquire))
+     {
+          RxBuffer[head] = c;
+          RxHead.store(next, std::memory_order_release);
+     }
+}
+
+NO_ASAN void PushTxChar(char c)
+{
+     const auto head = TxHead.load(std::memory_order_relaxed);
+     const auto next = (head + 1) % SERIAL_BUFFER_SIZE;
+     if (next != TxTail.load(std::memory_order_acquire))
+     {
+          TxBuffer[head] = c;
+          TxHead.store(next, std::memory_order_release);
+     }
+}
+
+NO_ASAN void operations::WriteSerialCharacter(char value)
+{
+     while (!(In8(COM1_PORT + 5) & 0x20)) {} // wait for TX ready
      Out8(COM1_PORT, static_cast<std::uint8_t>(value));
 }
-char operations::ReadSerialCharacter()
+
+NO_ASAN char operations::ReadSerialCharacter()
 {
-     while ((In8(COM1_PORT + 5) & 0x01) == 0) {}
-     return static_cast<char>(In8(COM1_PORT));
+     while (RxTail.load(std::memory_order_acquire) == RxHead.load(std::memory_order_acquire)) Halt();
+
+     const auto tail = RxTail.load(std::memory_order_relaxed);
+     const char c = RxBuffer[tail];
+     RxTail.store((tail + 1) % SERIAL_BUFFER_SIZE, std::memory_order_release);
+     return c;
+}
+
+void operations::SerialPushCharacter(char c) { PushRxChar(c); }
+void operations::SerialHoldLineHigh()
+{
+     while (true)
+     {
+          const auto tail = TxTail.load(std::memory_order_relaxed);
+          if (tail == TxHead.load(std::memory_order_acquire)) break; // no more data
+
+          while (!(In8(COM1_PORT + 5) & 0x20)) {} // wait for TX ready
+          const char c = TxBuffer[tail];
+          TxTail.store((tail + 1) % SERIAL_BUFFER_SIZE, std::memory_order_release);
+          Out8(COM1_PORT, static_cast<std::uint8_t>(c));
+     }
 }
 
 #ifdef COMPILER_MSVC
 #include <intrin.h>
 
-void operations::EnableInterrupts() { ::_enable(); }
-void operations::DisableInterrupts() { ::_disable(); }
-void operations::Yield() { ::_mm_pause(); }
-std::uint64_t operations::ReadCurrentCycles() { return ::__rdtsc(); }
-void operations::Halt() { ::__halt(); }
+NO_ASAN void operations::EnableInterrupts() { ::_enable(); }
+NO_ASAN void operations::DisableInterrupts() { ::_disable(); }
+NO_ASAN void operations::Yield() { ::_mm_pause(); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles() { return ::__rdtsc(); }
+NO_ASAN void operations::Halt() { ::__halt(); }
 #elifdef COMPILER_CLANG // ^^^ MSVC / vvv clang
 #include <x86intrin.h>
 
-void operations::EnableInterrupts() { asm volatile("sti"); }
-void operations::DisableInterrupts() { asm volatile("cli"); }
-void operations::Yield() { asm volatile("pause"); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { asm volatile("sti"); }
+NO_ASAN void operations::DisableInterrupts() { asm volatile("cli"); }
+NO_ASAN void operations::Yield() { asm volatile("pause"); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint32_t low{};
      std::uint32_t high{};
      asm volatile("rdtsc" : "=a"(low), "=d"(high));
      return (static_cast<std::uint64_t>(high) << 32) | low;
 }
-void operations::Halt() { asm volatile("hlt"); }
+NO_ASAN void operations::Halt() { asm volatile("hlt"); }
 
 #endif
 
@@ -70,39 +141,39 @@ void operations::Halt() { asm volatile("hlt"); }
 #ifdef COMPILER_MSVC
 #include <intrin.h>
 
-void operations::EnableInterrupts() { ::_enable(); }
-void operations::DisableInterrupts() { ::_disable(); }
-void operations::Yield() { ::_mm_pause(); }
-std::uint64_t operations::ReadCurrentCycles() { return ::__rdtsc(); }
-void operations::Halt() { ::__halt(); }
+NO_ASAN void operations::EnableInterrupts() { ::_enable(); }
+NO_ASAN void operations::DisableInterrupts() { ::_disable(); }
+NO_ASAN void operations::Yield() { ::_mm_pause(); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles() { return ::__rdtsc(); }
+NO_ASAN void operations::Halt() { ::__halt(); }
 #elifdef COMPILER_CLANG // ^^^ MSVC / vvv clang
 #include <x86intrin.h>
 
-void operations::EnableInterrupts() { asm volatile("sti"); }
-void operations::DisableInterrupts() { asm volatile("cli"); }
-void operations::Yield() { asm volatile("pause"); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { asm volatile("sti"); }
+NO_ASAN void operations::DisableInterrupts() { asm volatile("cli"); }
+NO_ASAN void operations::Yield() { asm volatile("pause"); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint32_t low{};
      std::uint32_t high{};
      asm volatile("rdtsc" : "=a"(low), "=d"(high));
      return (static_cast<std::uint64_t>(high) << 32uz) | low;
 }
-void operations::Halt() { asm volatile("hlt"); }
+NO_ASAN void operations::Halt() { asm volatile("hlt"); }
 #elifdef COMPILER_GCC // ^^^ clang / vvv gcc
 #include <x86intrin.h>
 
-void operations::EnableInterrupts() { asm volatile("sti"); }
-void operations::DisableInterrupts() { asm volatile("cli"); }
-void operations::Yield() { asm volatile("pause"); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { asm volatile("sti"); }
+NO_ASAN void operations::DisableInterrupts() { asm volatile("cli"); }
+NO_ASAN void operations::Yield() { asm volatile("pause"); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint32_t low{};
      std::uint32_t high{};
      asm volatile("rdtsc" : "=a"(low), "=d"(high));
      return (static_cast<std::uint64_t>(high) << 32) | low;
 }
-void operations::Halt() { asm volatile("hlt"); }
+NO_ASAN void operations::Halt() { asm volatile("hlt"); }
 #endif
 
 #elifdef ARCH_ARM64 // ^^^ x86-32 / ARM vvv
@@ -130,6 +201,7 @@ namespace
           volatile std::uint32_t icr;
      };
 } // namespace
+void operations::InitialiseSerial() {}
 
 void operations::WriteSerialCharacter(char value)
 {
@@ -163,38 +235,38 @@ char operations::TryReadSerialCharacter()
 #ifdef COMPILER_MSVC
 #include <intrin.h>
 
-void operations::EnableInterrupts() { ::_enable(); }
-void operations::DisableInterrupts() { ::_disable(); }
-void operations::Yield() { ::__yield(); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { ::_enable(); }
+NO_ASAN void operations::DisableInterrupts() { ::_disable(); }
+NO_ASAN void operations::Yield() { ::__yield(); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint64_t cycles = 0;
      cycles = ::_ReadStatusReg(ARM64_SYSREG(3, 3, 14, 0, 0));
      return cycles;
 }
-void operations::Halt() { ::__wfi(); }
+NO_ASAN void operations::Halt() { ::__wfi(); }
 #elifdef COMPILER_CLANG // ^^^ MSVC / vvv clang
-void operations::EnableInterrupts() { asm volatile("msr daifclr, #2"); }
-void operations::DisableInterrupts() { asm volatile("msr daifset, #2"); }
-void operations::Yield() { asm volatile("yield"); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { asm volatile("msr daifclr, #2"); }
+NO_ASAN void operations::DisableInterrupts() { asm volatile("msr daifset, #2"); }
+NO_ASAN void operations::Yield() { asm volatile("yield"); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint64_t cycles{};
      asm volatile("mrs %0, pmccntr_el0" : "=r"(cycles));
      return cycles;
 }
-void operations::Halt() { asm volatile("wfi"); }
+NO_ASAN void operations::Halt() { asm volatile("wfi"); }
 #elifdef COMPILER_GCC   // ^^^ clang / vvv gcc
-void operations::EnableInterrupts() { asm volatile("msr daifclr, #2"); }
-void operations::DisableInterrupts() { asm volatile("msr daifset, #2"); }
-void operations::Yield() { asm volatile("yield"); }
-std::uint64_t operations::ReadCurrentCycles()
+NO_ASAN void operations::EnableInterrupts() { asm volatile("msr daifclr, #2"); }
+NO_ASAN void operations::DisableInterrupts() { asm volatile("msr daifset, #2"); }
+NO_ASAN void operations::Yield() { asm volatile("yield"); }
+NO_ASAN std::uint64_t operations::ReadCurrentCycles()
 {
      std::uint64_t cycles{};
      asm volatile("mrs %0, pmccntr_el0" : "=r"(cycles));
      return cycles;
 }
-void operations::Halt() { asm volatile("wfi"); }
+NO_ASAN void operations::Halt() { asm volatile("wfi"); }
 #endif
 
 #else // ^^^ ARM
