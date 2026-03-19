@@ -15,7 +15,7 @@ namespace bootloader
 {
      ImageLoader::ImageLoader(EFI_BOOT_SERVICES* bootServices)
          : _bootServices(bootServices), _lastStatus(EFI_SUCCESS), _baseAddress(nullptr), _entryPoint(nullptr),
-           _imageSize(0)
+           _imageSize(0), _videoBaseAddress(nullptr), _videoImageSize(0)
      {
      }
 
@@ -114,6 +114,8 @@ namespace bootloader
 
           std::uint64_t delta = reinterpret_cast<std::uint64_t>(imageBase) - ntHeader.optionalHeader.imageBase;
           if (delta) ApplyRelocations(imageBase, ntHeader, delta);
+          this->_videoBaseAddress = imageBase;
+          this->_videoImageSize = imageSize;
 
           return imageBase;
      }

@@ -73,9 +73,9 @@ namespace cpu
           std::uint64_t base;
      };
 #pragma pack(pop)
-     static GdtEntry sGdt[6];
-     static Tss64 sTss;
-     static IdtEntry sIdt[256];
+     static GdtEntry sGdt[6]{};
+     static Tss64 sTss{};
+     static IdtEntry sIdt[256]{};
 
      static NO_ASAN void SetGdtEntry(std::size_t index, std::uint32_t base, std::uint32_t limit, std::uint8_t access,
                                      std::uint8_t granularity)
@@ -116,6 +116,7 @@ namespace cpu
           sIdt[index].ist = ist;
           sIdt[index].typeAttr = typeAttr;
           sIdt[index].reserved = 0;
+          _mm_clflush(&sIdt[index]);
      }
 
      using InterruptRoutine = void (*)();
@@ -125,6 +126,8 @@ namespace cpu
 
      NO_ASAN void Initialise()
      {
+          operations::DisableInterrupts();
+
           std::memset(sGdt, 0, sizeof(sGdt));
           std::memset(&sTss, 0, sizeof(sTss));
           std::memset(sIdt, 0, sizeof(sIdt));
@@ -156,17 +159,12 @@ namespace cpu
           Idtr idtr{};
           idtr.limit = sizeof(sIdt) - 1;
           idtr.base = reinterpret_cast<std::uintptr_t>(&sIdt);
+          _mm_clflush(&idtr);
 
 #ifdef COMPILER_MSVC
           __lidt(&idtr);
 #else
           asm volatile("lidt %0" : : "m"(idtr));
-#endif
-
-#ifdef COMPILER_MSVC
-          LoadTaskRegister(0);
-#else
-          asm volatile("ltr %w0" : : "r"(static_cast<std::uint16_t>(0)));
 #endif
 
 #ifdef COMPILER_MSVC

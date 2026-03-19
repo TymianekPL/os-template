@@ -89,8 +89,8 @@ namespace debugging
           {
                std::array<char, 32> buffer{};
 
-               int base = 10;
-               if (spec.kind == FormatKind::HexLower || spec.kind == FormatKind::HexUpper) base = 16;
+               TInteger base = 10;
+               if (spec.kind == FormatKind::HexLower || spec.kind == FormatKind::HexUpper) base = TInteger(16);
 
                auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, base);
 
@@ -164,6 +164,7 @@ namespace debugging
 
      template <typename... TArgs> NO_ASAN void DbgWrite(const char8_t* format, TArgs&&... args)
      {
+          return;
           const char8_t* ptr = format;
           std::tuple<TArgs...> tupleArgs(std::forward<TArgs>(args)...);
           std::size_t argIndex = 0;

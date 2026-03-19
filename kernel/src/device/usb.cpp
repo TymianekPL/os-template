@@ -171,7 +171,7 @@ struct UHCIController
           _bus = busNum;
           _function = functionNum;
 
-          KeRegisterInterruptHandler(hdr->interruptLine, hdr->interruptLine + 0x20, KiIsrUsbUHCI, this);
+          // KeRegisterInterruptHandler(hdr->interruptLine, hdr->interruptLine + 0x20, KiIsrUsbUHCI, this);
           DisableLegacyUSB();
           SetBusMaster();
           ResetController();

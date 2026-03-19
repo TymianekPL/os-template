@@ -7,8 +7,12 @@
 #include "utils/kdbg.h"
 #include "utils/operations.h"
 
+static std::atomic<bool> g_schedulerInitialised{false};
+
 process::CpuLocal* process::KeCurrentCpu()
 {
+     if (!g_schedulerInitialised.load(std::memory_order::relaxed)) return nullptr;
+
 #ifdef ARCH_X8664
 #ifdef COMPILER_MSVC
      CpuLocal* cpuLocal;
@@ -79,8 +83,6 @@ std::uint64_t process::KiAllocateThreadId()
      static std::atomic<std::uint64_t> nextThreadId{1};
      return nextThreadId.fetch_add(1, std::memory_order::relaxed);
 }
-
-static std::atomic<bool> g_schedulerInitialised{false};
 
 namespace
 {
@@ -383,8 +385,6 @@ static NO_ASAN void KiInitialiseThreadStacks(void* stackPointer, bool isUsermode
 
 void process::KiInitialiseTaskScheduler(std::uint64_t cpuId, void* idleProcedure, std::uintptr_t stackPointer)
 {
-     operations::DisableInterrupts();
-
      auto* cpuLocal = new CpuLocal{};
      Thread* kernelThread = new Thread{};
      kernelThread->id = KiAllocateThreadId();

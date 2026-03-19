@@ -537,9 +537,8 @@ namespace memory::paging
 
           return true;
      }
-
      bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
-                                  void* (*allocator)(std::size_t))
+                                  void* (*allocator)(std::size_t), std::size_t startOffset)
      {
           constexpr std::uintptr_t DirectMapOffset = 0xFFFF800000000000ULL;
           constexpr std::size_t LargePageSize = 0x200000; // 2MB
@@ -547,7 +546,7 @@ namespace memory::paging
           auto* pml4 = reinterpret_cast<X64PageEntry*>(pageTableRoot);
 
           // TODO: Check 2MiB support (maybe add 1GiB support?)
-          for (std::uintptr_t pAddr = 0; pAddr < maxPhysicalAddress; pAddr += LargePageSize)
+          for (std::uintptr_t pAddr = startOffset; pAddr < maxPhysicalAddress; pAddr += LargePageSize)
           {
                std::uintptr_t vAddr = pAddr + DirectMapOffset;
 
@@ -639,7 +638,9 @@ namespace memory::paging
 #ifdef COMPILER_MSVC
           std::uint64_t cr4 = __readcr4();
           cr4 |= (1ULL << 5); // CR4.PAE
+          cr4 |= (1ULL << 4); // CR4.PSE
           cr4 |= (1ULL << 7); // CR4.PGE (global pages)
+          cr4 &= ~(1ULL << 12);
           __writecr4(cr4);
 
           std::uint64_t efer = __readmsr(0xC0000080); // IA32_EFER
@@ -652,14 +653,19 @@ namespace memory::paging
 #else
           std::uint64_t cr4 = 0;
           asm volatile("mov %%cr4, %0" : "=r"(cr4));
+          cr4 |= (1ULL << 4); // CR4.PSE
           cr4 |= (1ULL << 5); // CR4.PAE
           cr4 |= (1ULL << 7); // CR4.PGE (global pages)
+          cr4 &= ~(1ULL << 12);
+          cr4 &= ~(1ULL << 17);
+          cr4 &= ~(1ULL << 22);
           asm volatile("mov %0, %%cr4" ::"r"(cr4) : "memory");
 
           std::uint32_t eferLow{};
           std::uint32_t eferHigh{};
           asm volatile("rdmsr" : "=a"(eferLow), "=d"(eferHigh) : "c"(0xC0000080));
-          eferLow |= (1 << 8); // EFER.LME
+          eferLow |= (1 << 8);  // EFER.LME
+          eferLow |= (1 << 11); // NX
           asm volatile("wrmsr" ::"c"(0xC0000080), "a"(eferLow), "d"(eferHigh) : "memory");
 
           std::uint64_t cr0 = 0;
@@ -873,7 +879,7 @@ namespace memory::paging
 
      NO_ASAN bool MapPage(std::uintptr_t pageTableRoot, const PageMapping& mapping, void* (*allocator)(std::size_t))
      {
-          auto* l0 = reinterpret_cast<ARMPageEntry*>(pageTableRoot);
+          auto* l0 = reinterpret_cast<ARMPageEntry*>(pageTableRoot + virtualOffset);
 
           for (std::uintptr_t offset = 0; offset < mapping.size; offset += 0x1000)
           {
@@ -944,14 +950,14 @@ namespace memory::paging
      }
 
      NO_ASAN bool MapPhysicalMemoryDirect(std::uintptr_t pageTableRoot, std::size_t maxPhysicalAddress,
-                                          void* (*allocator)(std::size_t))
+                                          void* (*allocator)(std::size_t), std::size_t startOffset)
      {
           constexpr std::uintptr_t DIRECT_MAP_OFFSET = 0xFFFF800000000000ULL;
           constexpr std::size_t BLOCK_SIZE = 0x200000;
 
           auto* l0 = reinterpret_cast<ARMPageEntry*>(pageTableRoot);
 
-          for (std::uintptr_t pAddr = 0; pAddr < maxPhysicalAddress; pAddr += BLOCK_SIZE)
+          for (std::uintptr_t pAddr = startOffset; pAddr < maxPhysicalAddress; pAddr += BLOCK_SIZE)
           {
                std::uintptr_t vAddr = pAddr + DIRECT_MAP_OFFSET;
 

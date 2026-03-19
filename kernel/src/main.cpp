@@ -13,6 +13,7 @@
 #include "object/object.h"
 #include "process/process.h"
 #include "process/taskScheduler.h"
+#include "utils/PE.h"
 #include "utils/arch.h"
 #include "utils/cpu.h"
 #include "utils/identify.h"
@@ -27,8 +28,87 @@
 #endif
 alignas(std::max_align_t) static std::byte g_kernelProcessStorage[sizeof(kernel::ProcessControlBlock)]; // NOLINT
 
+struct DateTime
+{
+     std::uint32_t sec;
+     std::uint32_t min;
+     std::uint32_t hour;
+     std::uint32_t day;
+     std::uint32_t month;
+     std::uint32_t year;
+};
+
+static bool IsLeap(std::uint32_t y) { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0); }
+
+static std::uint32_t DaysInMonth(std::uint32_t m, std::uint32_t y)
+{
+     static constexpr std::array<std::uint32_t, 12> days = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+     if (m == 2 && IsLeap(y)) return 29;
+
+     return days[m - 1];
+}
+
+static DateTime UnixToDateTime(std::uint64_t t)
+{
+     DateTime dt{};
+
+     dt.sec = t % 60;
+     t /= 60;
+     dt.min = t % 60;
+     t /= 60;
+     dt.hour = t % 24;
+     t /= 24;
+
+     std::uint32_t year = 1970;
+
+     while (true)
+     {
+          const std::uint32_t daysYear = IsLeap(year) ? 366 : 365;
+          if (t < daysYear) break;
+          t -= daysYear;
+          year++;
+     }
+
+     dt.year = year;
+
+     std::uint32_t month = 1;
+     while (true)
+     {
+          const std::uint32_t dim = DaysInMonth(month, year);
+          if (t < dim) break;
+          t -= dim;
+          month++;
+     }
+
+     dt.month = month;
+     dt.day = static_cast<std::uint32_t>(t + 1);
+
+     return dt;
+}
+
+static void Format2(char* out, std::uint32_t v)
+{
+     out[0] = char('0' + (v / 10));
+     out[1] = char('0' + (v % 10));
+}
+
+static void Format4(char* out, std::uint32_t v)
+{
+     out[0] = char('0' + ((v / 1000) % 10));
+     out[1] = char('0' + ((v / 100) % 10));
+     out[2] = char('0' + ((v / 10) % 10));
+     out[3] = char('0' + (v % 10));
+}
+
 void KiIdleLoop()
 {
+     std::uint32_t screenWidth{};
+     std::uint32_t screenHeight{};
+     VidGetDimensions(screenWidth, screenHeight);
+
+     std::size_t lastSeconds{};
+
      while (true)
      {
           VidExchangeBuffers();
@@ -42,6 +122,48 @@ void KiIdleLoop()
 
           operations::EnableInterrupts();
           operations::Halt();
+
+          const auto unixTime = KeCurrentSystemTime() / 1'000;
+          if (unixTime == lastSeconds) continue;
+          lastSeconds = unixTime;
+
+          const auto dt = UnixToDateTime(unixTime);
+
+          std::array<char, 32> buffer{};
+
+          buffer[0] = char('0' + (dt.hour / 10));
+          buffer[1] = char('0' + (dt.hour % 10));
+          buffer[2] = ':';
+
+          buffer[3] = char('0' + (dt.min / 10));
+          buffer[4] = char('0' + (dt.min % 10));
+          buffer[5] = ':';
+
+          buffer[6] = char('0' + (dt.sec / 10));
+          buffer[7] = char('0' + (dt.sec % 10));
+          buffer[8] = ' ';
+
+          buffer[9] = char('0' + (dt.day / 10));
+          buffer[10] = char('0' + (dt.day % 10));
+          buffer[11] = '.';
+
+          buffer[12] = char('0' + (dt.month / 10));
+          buffer[13] = char('0' + (dt.month % 10));
+          buffer[14] = '.';
+
+          Format4(&buffer[15], dt.year);
+          buffer[19] = '\0';
+
+          constexpr int charW = 2 * 8;
+          constexpr int charH = 2 * 6;
+
+          const int width = 20 * charW;
+          const int x = static_cast<int>(screenWidth - width);
+          const int y = (5 + charH) / 2;
+
+          VidDrawRoundedRect(10, 5, screenWidth - 20, charH + 8, 15, 0xfefefe);
+
+          for (int i = 0; buffer[i]; i++) VidDrawChar(x + (i * charW), y, buffer[i], 0, 2);
      }
 }
 void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
@@ -56,8 +178,104 @@ void Error(std::uint32_t* buffer, arch::LoaderParameterBlock* param)
 
 extern "C" void __asan_init();
 
+static NO_ASAN void KiMarkBootVideoImage()
+{
+     auto* const videoBytes = reinterpret_cast<std::byte*>(g_loaderBlock->bootVideoVirtualBase);
+
+     const auto* dos = reinterpret_cast<const DosHeader*>(videoBytes);
+     const auto* nt = reinterpret_cast<const NtHeaders*>(videoBytes + dos->eLfanew);
+     const auto& opt = nt->optionalHeader;
+
+     {
+          const std::size_t headerSize = (opt.sizeOfHeaders + 0xFFF) & ~0xFFFull;
+          g_kernelProcess->ReserveMemoryFixedAsCommitted(g_loaderBlock->bootVideoVirtualBase, headerSize,
+                                                         memory::MemoryProtection::ReadOnly,
+                                                         memory::PFNUse::KernelHeap);
+     }
+
+     const std::uint16_t numSections = nt->fileHeader.numberOfSections;
+     const auto* sections =
+         reinterpret_cast<const SectionHeader*>(videoBytes + dos->eLfanew + sizeof(std::uint32_t) +
+                                                sizeof(CoffFileHeader) + nt->fileHeader.sizeOfOptionalHeader);
+
+     for (std::uint16_t i = 0; i < numSections; i++)
+     {
+          const SectionHeader& sec = sections[i];
+
+          const std::uint32_t mapSize = sec.virtualSize > 0 ? sec.virtualSize : sec.sizeOfRawData;
+          if (mapSize == 0) continue;
+
+          const std::uintptr_t secVirt = g_loaderBlock->bootVideoVirtualBase + sec.virtualAddress;
+          const std::size_t secSize = (mapSize + 0xFFF) & ~0xFFFull;
+
+          const bool writable = (sec.characteristics & 0x80000000) != 0;
+          const bool executable = (sec.characteristics & 0x20000000) != 0;
+
+          memory::MemoryProtection prot{};
+          if (executable && writable) prot = memory::MemoryProtection::ExecuteReadWrite;
+          else if (executable)
+               prot = memory::MemoryProtection::ExecuteRead;
+          else if (writable)
+               prot = memory::MemoryProtection::ReadWrite;
+          else
+               prot = memory::MemoryProtection::ReadOnly;
+
+          g_kernelProcess->ReserveMemoryFixedAsCommitted(secVirt, secSize, prot, memory::PFNUse::KernelHeap);
+     }
+}
+
+static NO_ASAN void KiMarkKernelImage()
+{
+     auto* const kernelBytes = reinterpret_cast<std::byte*>(g_loaderBlock->kernelVirtualBase);
+
+     const auto* dos = reinterpret_cast<const DosHeader*>(kernelBytes);
+     const auto* nt = reinterpret_cast<const NtHeaders*>(kernelBytes + dos->eLfanew);
+     const auto& opt = nt->optionalHeader;
+
+     {
+          const std::size_t headerSize = (opt.sizeOfHeaders + 0xFFF) & ~0xFFFull;
+          g_kernelProcess->ReserveMemoryFixedAsCommitted(g_loaderBlock->kernelVirtualBase, headerSize,
+                                                         memory::MemoryProtection::ReadOnly,
+                                                         memory::PFNUse::KernelHeap);
+     }
+
+     const std::uint16_t numSections = nt->fileHeader.numberOfSections;
+     const auto* sections =
+         reinterpret_cast<const SectionHeader*>(kernelBytes + dos->eLfanew + sizeof(std::uint32_t) +
+                                                sizeof(CoffFileHeader) + nt->fileHeader.sizeOfOptionalHeader);
+
+     for (std::uint16_t i = 0; i < numSections; i++)
+     {
+          const SectionHeader& sec = sections[i];
+
+          const std::uint32_t mapSize = sec.virtualSize > 0 ? sec.virtualSize : sec.sizeOfRawData;
+          if (mapSize == 0) continue;
+
+          const std::uintptr_t secVirt = g_loaderBlock->kernelVirtualBase + sec.virtualAddress;
+          const std::size_t secSize = (mapSize + 0xFFF) & ~0xFFFull;
+
+          const bool writable = (sec.characteristics & 0x80000000) != 0;
+          const bool executable = (sec.characteristics & 0x20000000) != 0;
+
+          memory::MemoryProtection prot{};
+          if (executable && writable) prot = memory::MemoryProtection::ExecuteReadWrite;
+          else if (executable)
+               prot = memory::MemoryProtection::ExecuteRead;
+          else if (writable)
+               prot = memory::MemoryProtection::ReadWrite;
+          else
+               prot = memory::MemoryProtection::ReadOnly;
+
+          g_kernelProcess->ReserveMemoryFixedAsCommitted(secVirt, secSize, prot, memory::PFNUse::KernelHeap);
+     }
+
+     KiMarkBootVideoImage();
+}
+
 void NO_ASAN KiInitialise(arch::LoaderParameterBlock* param)
 {
+     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
+
      g_bootCycles = operations::ReadCurrentCycles();
      g_loaderBlock = param;
      auto framebuffer = param->framebuffer;
@@ -69,8 +287,6 @@ void NO_ASAN KiInitialise(arch::LoaderParameterBlock* param)
 
      cpu::Initialise();
 
-     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
-
      auto status = memory::physicalAllocator.Initialise(param->memoryDescriptors, param->kernelPhysicalBase,
                                                         0xffff'8000'0000'0000, param->kernelSize);
      if (!status) Error(buffer, param);
@@ -81,19 +297,20 @@ void NO_ASAN KiInitialise(arch::LoaderParameterBlock* param)
      g_kernelProcess->SetPageTableBase(memory::paging::GetCurrentPageTable());
 
      for (std::size_t i = 0; i < param->framebuffer.height; i++)
-          std::uninitialized_fill_n(buffer + (i * framebuffer.scanlineSize), framebuffer.scanlineSize, 0);
+          std::uninitialized_fill_n(buffer + (i * framebuffer.scanlineSize), framebuffer.scanlineSize, 0x11);
 
      memory::virtualOffset = 0xffff'8000'0000'0000;
 
      g_kernelProcess->ReserveMemoryFixedAsCommitted(param->stackVirtualBase, param->stackSize,
                                                     memory::MemoryProtection::ReadWrite, memory::PFNUse::KernelStack);
-     g_kernelProcess->ReserveMemoryFixedAsCommitted(param->kernelVirtualBase, param->kernelSize,
-                                                    memory::MemoryProtection::ExecuteReadWrite,
-                                                    memory::PFNUse::KernelHeap);
+
+     KiMarkKernelImage();
+
      g_kernelProcess->ReserveMemoryFixed(memory::virtualOffset, memory::physicalAllocator.databaseSize * 0x1000uz,
                                          memory::MemoryProtection::ReadWrite, memory::PFNUse::DriverLocked);
 
      KeInitialiseCpu(param->acpiPhysical);
+     KeRemoveLeftoverMappings();
 }
 void PrintVadEntryCallback(const memory::VADEntry& entry)
 {
@@ -405,11 +622,326 @@ bool SerialInterruptHandler([[maybe_unused]] cpu::IInterruptFrame& frame, void* 
 }
 #endif
 
-void meowwww()
+static constexpr std::uint32_t kColBackground = 0x10101a;
+static constexpr std::uint32_t kColDefault = 0xd4d4d4;
+static constexpr std::uint32_t kColTreeLine = 0x4a4a6a;
+static constexpr std::uint32_t kColBracket = 0x608060;    // [TypeName]
+static constexpr std::uint32_t kColTypeName = 0x4ec994;   // the type string itself
+static constexpr std::uint32_t kColObjectName = 0xe0c070; // "name"
+static constexpr std::uint32_t kColSymlink = 0x7ab4f5;    // -> target
+static constexpr std::uint32_t kColNumber = 0xce9178;     // numeric values
+static constexpr std::uint32_t kColKey = 0x9cdcfe;        // "refs=", "CPU", etc.
+static constexpr std::uint32_t kColBsp = 0xf44747;        // BSP label
+static constexpr std::uint32_t kColAp = 0x608060;         // AP label
+static constexpr std::uint32_t kColEmpty = 0x666680;      // (empty)
+static constexpr std::uint32_t kColDepthLimit = 0xf44747; // depth warning
+
+struct VidTextCtx
 {
-     int* x = new int(123);
-     delete x;
-     debugging::DbgWrite(u8"Allocated int at {}, value = {}\r\n", reinterpret_cast<void*>(x), *x);
+     std::uint32_t x{};
+     std::uint32_t y{};
+     std::uint32_t screenW{};
+     std::uint32_t screenH{};
+     std::uint8_t scale{1};
+     std::uint32_t charW{};
+     std::uint32_t charH{};
+     std::uint32_t marginLeft{};
+};
+static void VtPutChar(VidTextCtx& ctx, char c, std::uint32_t colour) noexcept
+{
+     if (ctx.y + ctx.charH > ctx.screenH) return;
+
+     if (c == '\n')
+     {
+          ctx.x = ctx.marginLeft;
+          ctx.y += ctx.charH;
+          return;
+     }
+
+     if (ctx.x + ctx.charW > ctx.screenW)
+     {
+          ctx.x = ctx.marginLeft;
+          ctx.y += ctx.charH;
+          if (ctx.y + ctx.charH > ctx.screenH) return;
+     }
+
+     VidDrawChar(ctx.x, ctx.y, c, colour, ctx.scale);
+     ctx.x += ctx.charW;
+}
+
+static void VtPutStr(VidTextCtx& ctx, const char* s, std::uint32_t colour) noexcept
+{
+     if (s == nullptr) return;
+     while (*s) VtPutChar(ctx, *s++, colour);
+}
+
+static void VtPutStr8(VidTextCtx& ctx, const char8_t* s, std::uint32_t colour) noexcept
+{
+     VtPutStr(ctx, reinterpret_cast<const char*>(s), colour);
+}
+
+static void VtPutU64(VidTextCtx& ctx, std::uint64_t v, std::uint32_t colour) noexcept
+{
+     char buf[21]; // NOLINT
+     std::size_t len = 0;
+     if (v == 0) { buf[len++] = '0'; }
+     else
+     {
+          while (v > 0)
+          {
+               buf[len++] = static_cast<char>('0' + (v % 10));
+               v /= 10;
+          }
+
+          for (std::size_t i = 0, j = len - 1; i < j; ++i, --j)
+          {
+               const char tmp = buf[i];
+               buf[i] = buf[j];
+               buf[j] = tmp;
+          }
+     }
+     buf[len] = '\0';
+     VtPutStr(ctx, buf, colour);
+}
+
+static void VtPutU32(VidTextCtx& ctx, std::uint32_t v, std::uint32_t colour) noexcept { VtPutU64(ctx, v, colour); }
+
+static void VtPutU16(VidTextCtx& ctx, std::uint16_t v, std::uint32_t colour) noexcept { VtPutU64(ctx, v, colour); }
+
+static void VtPutHex8(VidTextCtx& ctx, std::uint8_t v, std::uint32_t colour) noexcept
+{
+     constexpr const char kHex[] = "0123456789abcdef";
+     char buf[3] = {kHex[v >> 4], kHex[v & 0xF], '\0'};
+     VtPutStr(ctx, buf, colour);
+}
+
+static void VtPutHex16(VidTextCtx& ctx, std::uint16_t v, std::uint32_t colour) noexcept
+{
+     constexpr const char kHex[] = "0123456789abcdef";
+     char buf[5] = {kHex[(v >> 12) & 0xF], kHex[(v >> 8) & 0xF], kHex[(v >> 4) & 0xF], kHex[v & 0xF], '\0'};
+     VtPutStr(ctx, buf, colour);
+}
+
+[[nodiscard]] static const char* ObjTypeName(object::ObjectType t) noexcept
+{
+     switch (t)
+     {
+     case object::ObjectType::Process: return "Process";
+     case object::ObjectType::Thread: return "Thread";
+     case object::ObjectType::File: return "File";
+     case object::ObjectType::Event: return "Event";
+     case object::ObjectType::Mutex: return "Mutex";
+     case object::ObjectType::Semaphore: return "Semaphore";
+     case object::ObjectType::Timer: return "Timer";
+     case object::ObjectType::Section: return "Section";
+     case object::ObjectType::Port: return "Port";
+     case object::ObjectType::SymbolicLink: return "SymLink";
+     case object::ObjectType::Directory: return "Directory";
+     case object::ObjectType::Device: return "Device";
+     case object::ObjectType::Driver: return "Driver";
+     case object::ObjectType::TypeDescriptor: return "TypeDesc";
+     case object::ObjectType::Processor: return "Processor";
+     default: return "Unknown";
+     }
+}
+
+static void VtPutIndentAndBranch(VidTextCtx& ctx, const char* indent, bool isLast) noexcept
+{
+     VtPutStr(ctx, indent, kColTreeLine);
+     VtPutStr(ctx, isLast ? "`-- " : "|-- ", kColTreeLine);
+}
+
+static void VtEmitSymlinkAnnotation(VidTextCtx& ctx, const object::ObjectHeader* node) noexcept
+{
+     const auto* sl = node->BodyAs<object::SymbolicLinkBody>();
+     VtPutStr(ctx, " -> ", kColTreeLine);
+     VtPutChar(ctx, '"', kColObjectName);
+     VtPutStr(ctx, reinterpret_cast<const char*>(sl->targetPath.data()), kColSymlink);
+     VtPutChar(ctx, '"', kColObjectName);
+}
+
+static void VtEmitTypeDescAnnotation(VidTextCtx& ctx, const object::ObjectHeader* node) noexcept
+{
+     const auto* td = node->BodyAs<object::TypeDescriptorBody>();
+     VtPutStr(ctx, " (typeId=", kColKey);
+     VtPutU16(ctx, static_cast<std::uint16_t>(td->typeId), kColNumber);
+     VtPutChar(ctx, ')', kColKey);
+}
+
+static void VtEmitProcessorAnnotation(VidTextCtx& ctx, const object::ObjectHeader* node) noexcept
+{
+     const auto* pr = node->BodyAs<object::ProcessorBody>();
+     VtPutStr(ctx, " (CPU", kColKey);
+     VtPutU32(ctx, pr->logicalIndex, kColNumber);
+     VtPutStr(ctx, " APIC=", kColKey);
+     VtPutU32(ctx, pr->apicId, kColNumber);
+     VtPutChar(ctx, ' ', kColKey);
+     VtPutStr(ctx, pr->isBsp ? "BSP" : "AP", pr->isBsp ? kColBsp : kColAp);
+     VtPutChar(ctx, ')', kColKey);
+}
+
+static void VtEmitPciChain(VidTextCtx& ctx, const device::Device* dev) noexcept
+{
+     if (dev->type != device::DeviceType::PCI)
+     {
+          VtPutStr(ctx, " (Device)", kColKey);
+          return;
+     }
+
+     const auto* pci = static_cast<const PCIDevice*>(dev);
+
+     if (pci->parent)
+     {
+          VtPutStr(ctx, " PCI ", kColKey);
+          VtPutHex16(ctx, pci->segment, kColNumber);
+          VtPutChar(ctx, ':', kColTreeLine);
+          VtPutHex8(ctx, pci->bus, kColNumber);
+          VtPutChar(ctx, ':', kColTreeLine);
+          VtPutHex8(ctx, pci->device, kColNumber);
+          VtPutChar(ctx, '.', kColTreeLine);
+          VtPutHex8(ctx, pci->function, kColNumber);
+          VtPutStr(ctx, " parent =", kColKey);
+          VtEmitPciChain(ctx, pci->parent);
+     }
+     else
+     {
+          VtPutStr(ctx, " PCI ", kColKey);
+          VtPutHex16(ctx, pci->segment, kColNumber);
+          VtPutChar(ctx, ':', kColTreeLine);
+          VtPutHex8(ctx, pci->bus, kColNumber);
+          VtPutChar(ctx, ':', kColTreeLine);
+          VtPutHex8(ctx, pci->device, kColNumber);
+          VtPutChar(ctx, '.', kColTreeLine);
+          VtPutHex8(ctx, pci->function, kColNumber);
+     }
+}
+
+static void VtEmitDeviceAnnotation(VidTextCtx& ctx, const object::ObjectHeader* node) noexcept
+{
+     const auto* dev = node->BodyAs<device::Device>();
+     VtEmitPciChain(ctx, dev);
+}
+
+static constexpr std::size_t kMaxChildren = 256;
+static constexpr std::uint32_t kMaxDepth = 16;
+
+static void VtPrintNode(VidTextCtx& ctx, const object::ObjectHeader* node,
+                        char* indent, // mutable, max 64 bytes
+                        std::size_t& indentLen, std::uint32_t depth) noexcept
+{
+     if (ctx.y + ctx.charH > ctx.screenH) return; // no screen space left
+
+     if (depth > kMaxDepth)
+     {
+          VtPutStr(ctx, indent, kColTreeLine);
+          VtPutStr(ctx, "... (depth limit)\n", kColDepthLimit);
+          return;
+     }
+
+     if (node->type != object::ObjectType::Directory) return;
+
+     struct SnapCtx
+     {
+          const object::ObjectHeader** children;
+          std::size_t* count;
+     };
+
+     const object::ObjectHeader* children[kMaxChildren]{};
+     std::size_t childCount = 0;
+     SnapCtx snapCtx{.children = children, .count = &childCount};
+
+     node->BodyAs<object::DirectoryBody>()->Enumerate(
+         [](const object::ObjectHeader* child, void* raw) noexcept
+         {
+              auto* s = static_cast<SnapCtx*>(raw);
+              if (*s->count < kMaxChildren) s->children[(*s->count)++] = child;
+         },
+         &snapCtx);
+
+     if (childCount == 0)
+     {
+          VtPutStr(ctx, indent, kColTreeLine);
+          VtPutStr(ctx, "(empty)\n", kColEmpty);
+          return;
+     }
+
+     for (std::size_t i = 0; i < childCount; ++i)
+     {
+          if (ctx.y + ctx.charH > ctx.screenH) return;
+
+          const object::ObjectHeader* child = children[i];
+          const bool last = (i == childCount - 1);
+
+          VtPutIndentAndBranch(ctx, indent, last);
+
+          VtPutChar(ctx, '[', kColBracket);
+          VtPutStr(ctx, ObjTypeName(child->type), kColTypeName);
+          VtPutChar(ctx, ']', kColBracket);
+          VtPutChar(ctx, ' ', kColDefault);
+
+          VtPutChar(ctx, '"', kColDefault);
+          {
+               const auto view = child->accessName.View();
+               for (char ci : view) VtPutChar(ctx, static_cast<char>(ci), kColObjectName);
+          }
+          VtPutChar(ctx, '"', kColDefault);
+
+          switch (child->type)
+          {
+          case object::ObjectType::SymbolicLink: VtEmitSymlinkAnnotation(ctx, child); break;
+          case object::ObjectType::TypeDescriptor: VtEmitTypeDescAnnotation(ctx, child); break;
+          case object::ObjectType::Processor: VtEmitProcessorAnnotation(ctx, child); break;
+          case object::ObjectType::Device: VtEmitDeviceAnnotation(ctx, child); break;
+          default: break;
+          }
+
+          VtPutStr(ctx, "  refs=", kColKey);
+          VtPutU64(ctx, child->referenceCount.load(std::memory_order_relaxed), kColNumber);
+          VtPutChar(ctx, '\n', kColDefault);
+
+          if (child->type == object::ObjectType::Directory)
+          {
+               const char* ext = last ? "    " : "|   ";
+               std::size_t extLen = 0;
+               while (ext[extLen]) ++extLen;
+
+               if (indentLen + extLen + 1 < 64)
+               {
+                    std::memcpy(indent + indentLen, ext, extLen);
+                    indentLen += extLen;
+                    indent[indentLen] = '\0';
+
+                    VtPrintNode(ctx, child, indent, indentLen, depth + 1);
+
+                    indentLen -= extLen;
+                    indent[indentLen] = '\0';
+               }
+          }
+     }
+}
+
+void VidDumpObjectTree(const object::ObjectHeader* root) noexcept
+{
+     if (root == nullptr) return;
+
+     VidClearScreen(kColBackground);
+
+     VidTextCtx ctx{};
+     VidGetDimensions(ctx.screenW, ctx.screenH);
+     ctx.scale = 1;
+     ctx.charW = 8 * ctx.scale;
+     ctx.charH = 16 * ctx.scale;
+     ctx.marginLeft = ctx.x;
+
+     ctx.x = ctx.marginLeft;
+     ctx.y = ctx.charH + 18;
+
+     char indent[64]{};
+     std::size_t indentLen = 0;
+     VtPrintNode(ctx, root, indent, indentLen, 0);
+
+     // Flush to screen.
+     VidExchangeBuffers();
 }
 
 extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
@@ -419,10 +951,13 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
      if (param->systemMajor != OsVersionMajor || param->systemMinor != OsVersionMinor) return 1;
      cpu::g_systemBootTimeOffsetSeconds = param->bootTimeSeconds;
 
+     param =
+         reinterpret_cast<arch::LoaderParameterBlock*>(reinterpret_cast<std::uintptr_t>(param) + 0xffff'8000'0000'0000);
      KiInitialise(param);
 
      auto framebuffer = param->framebuffer;
-     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart);
+
+     std::uint32_t* buffer = reinterpret_cast<std::uint32_t*>(param->framebuffer.physicalStart + 0xffff'8000'0000'0000);
      std::uint32_t* bbuffer = static_cast<std::uint32_t*>(
          g_kernelProcess->AllocateVirtualMemory(nullptr, framebuffer.totalSize,
                                                 memory::AllocationFlags::Commit | memory::AllocationFlags::Reserve |
@@ -433,14 +968,17 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
 
      object::KeInitialiseOb();
      process::KiInitialiseTaskScheduler(0, reinterpret_cast<void*>(KiIdleLoop), param->stackVirtualBase);
+     process::KeCurrentCpu()->irql.store(cpu::IRQL::Passive, std::memory_order::release);
 
      KeInitialisePCIE();
+     memset(buffer, 0, framebuffer.totalSize);
      VidInitialise(VdiFrameBuffer{.framebuffer = buffer,
                                   .width = framebuffer.width,
                                   .height = framebuffer.height,
                                   .scalineSize = framebuffer.scanlineSize,
-                                  .optionalBackbuffer = bbuffer});
-
+                                  .optionalBackbuffer = bbuffer},
+                   operator new);
+     VidExchangeBuffers();
      // kasan::KeInitialise();
 
 #ifdef ARCH_X8664
@@ -453,6 +991,9 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
      debugging::DbgWrite(u8"  Image: Base={}, Size={}\r\n", reinterpret_cast<void*>(g_imageBase), g_imageSize);
      KASANAllocateHeap(bbuffer, framebuffer.totalSize);
 
+     VidDumpObjectTree(object::g_rootDirectoryHeader);
+
+     KiIdleLoop();
      while (true)
      {
           VidExchangeBuffers();
@@ -621,11 +1162,6 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
                                    (end - start) * 1000'0000uz / KeReadHighResolutionTimerFrequency());
                break;
           }
-          case 'i':
-          {
-               meowwww();
-               break;
-          }
           case 'I':
           {
 #ifdef ARCH_ARM64
@@ -790,18 +1326,31 @@ extern "C" NO_ASAN int KiStartup(arch::LoaderParameterBlock* param)
                                    }
                                    else if (child->type == object::ObjectType::Device)
                                    {
+                                        const auto scanPCI = [](this auto&& self, const device::Device* device) -> void
+                                        {
+                                             if (device->type == device::DeviceType::PCI)
+                                             {
+                                                  const auto* pciDev = static_cast<const PCIDevice*>(device);
+                                                  if (pciDev->parent)
+                                                  {
+                                                       debugging::DbgWrite(u8" PCI {}:{}:{}.{} parent =",
+                                                                           pciDev->segment, pciDev->bus, pciDev->device,
+                                                                           pciDev->function);
+                                                       self(pciDev->parent);
+                                                  }
+                                                  else
+                                                       debugging::DbgWrite(u8" PCI {}:{}:{}.{}", pciDev->segment,
+                                                                           pciDev->bus, pciDev->device,
+                                                                           pciDev->function);
+                                             }
+                                             else
+                                             {
+                                                  debugging::DbgWrite(u8" (Device)\r\n");
+                                             }
+                                        };
+
                                         const auto* dev = child->BodyAs<device::Device>();
-                                        if (dev->type == device::DeviceType::PCI)
-                                        {
-                                             const auto* pciDev = static_cast<const PCIDevice*>(dev);
-                                             debugging::DbgWrite(u8" (PCI {}:{}:{}.{}) has parent={}", pciDev->segment,
-                                                                 pciDev->bus, pciDev->device, pciDev->function,
-                                                                 !!pciDev->parent);
-                                        }
-                                        else
-                                        {
-                                             debugging::DbgWrite(u8" (Device)\r\n");
-                                        }
+                                        scanPCI(dev);
                                    }
 
                                    debugging::DbgWrite(u8"  refs={}\r\n",

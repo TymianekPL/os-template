@@ -1,11 +1,13 @@
 #include "interrupts.h"
 #include <utils/identify.h>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include "../dbg/bugcheck.h"
 #include "../process/taskScheduler.h"
 #include "utils/kdbg.h"
+#include "utils/memory.h"
 #include "utils/operations.h"
 
 std::uint64_t cpu::g_systemBootTimeOffsetSeconds{};
@@ -280,6 +282,13 @@ struct X8664InterruptFrame : cpu::IInterruptFrame // NOLINT
 
 extern "C" InterruptFrame* KeHandleInterruptFrame(InterruptFrame* frame)
 {
+     constexpr auto x = cpu::KeVectorToIrql(0xd0);
+
+     const auto irql = cpu::KeVectorToIrql(frame->vector);
+     const auto oldIrql = KeRaiseIrql(irql);
+
+     Defer defer{[oldIrql]() { KeLowerIrql(oldIrql); }};
+
      X8664InterruptFrame vFrame{frame};
      HandleInterrupt(vFrame);
      KeAcknowledgeInterrupt();
@@ -294,98 +303,124 @@ HPET* g_hpet{};
 
 void KeAcknowledgeInterrupt() { g_lapic[0xB0 / 4] = 0; }
 static std::atomic<std::uint64_t> lapicTicks{};
-std::uintptr_t HpetBasePhysical = 0xFED00000;
-std::uint64_t g_HpetFemtosecondsPerTick = 0;
 
-std::uint64_t KiReadHPETRaw()
-{
-     std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
-     volatile std::uint64_t& HpetMainCounter = *reinterpret_cast<volatile std::uint64_t*>(HpetBase + 0x0F0);
-     return HpetMainCounter;
-}
+static std::uint64_t g_HpetFemtosecondsPerTick{};
+static std::uintptr_t g_HpetBaseVirtual{};
+static std::uintptr_t HpetBasePhysical{};
 
-std::uint64_t KiGetHPETFrequency()
+constexpr std::uint64_t HPET_FEMTO_PER_SEC = 1'000'000'000'000'000ULL;
+constexpr std::uint64_t HPET_NANO_PER_SEC = 1'000'000'000ULL;
+
+static inline volatile std::uint64_t* HpetMainCounter()
 {
-     constexpr std::uint64_t FemtoPerSecond = 1'000'000'000'000'000ULL;
-     return FemtoPerSecond / g_HpetFemtosecondsPerTick;
+     return reinterpret_cast<volatile std::uint64_t*>(g_HpetBaseVirtual + 0xF0);
 }
-std::uint64_t KiGetHPETRawFrequency() { return 1'000'000'000'000'000ULL / g_HpetFemtosecondsPerTick; }
+std::uint64_t KiReadHPETRaw() { return *HpetMainCounter(); }
 
 std::uint64_t KiReadHPET()
 {
-     std::uintptr_t HpetBase = HpetBasePhysical + 0xffff'8000'0000'0000;
-     volatile std::uint64_t& HpetMainCounter = *reinterpret_cast<volatile std::uint64_t*>(HpetBase + 0xF0);
-     return HpetMainCounter * ((g_HpetFemtosecondsPerTick + 500'000ULL) / 10'000'000ULL);
+     const std::uint64_t ticks = *HpetMainCounter();
+     return (ticks * g_HpetFemtosecondsPerTick) / 1'000'000ULL;
+}
+
+std::uint64_t KiGetHPETFrequency() { return 1'000'000'000'000'000ULL / g_HpetFemtosecondsPerTick; }
+std::uint64_t KiGetHPETRawFrequency()
+{
+     if (g_HpetFemtosecondsPerTick == 0) return 0;
+
+     return 1'000'000'000'000'000ULL / g_HpetFemtosecondsPerTick;
+}
+
+double KeReadHighResolutionTimerMS()
+{
+     const std::uint64_t ticks = *HpetMainCounter();
+
+     const long double fs = static_cast<long double>(ticks) * static_cast<long double>(g_HpetFemtosecondsPerTick);
+
+     return static_cast<double>(fs / 1'000'000'000'000.0L);
 }
 
 void KiInitialiseHPET()
 {
-     std::uintptr_t HpetBaseVirtual = HpetBasePhysical + 0xffff'8000'0000'0000;
+     HpetBasePhysical = g_hpet->address.address;
+     g_HpetBaseVirtual = HpetBasePhysical + 0xffff'8000'0000'0000ULL;
 
-     volatile std::uint64_t& HpetGenCapabilities = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x0);
-     volatile std::uint64_t& HpetGenConfig = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x10);
-     volatile std::uint64_t& HpetMainCounter = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0xF0);
-     volatile std::uint64_t& HpetTimerConfig = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x100);
-     volatile std::uint64_t& HpetTimerComparator = *reinterpret_cast<volatile std::uint64_t*>(HpetBaseVirtual + 0x108);
+     auto& cap = *reinterpret_cast<volatile std::uint64_t*>(g_HpetBaseVirtual + 0x0);
+     auto& cfg = *reinterpret_cast<volatile std::uint64_t*>(g_HpetBaseVirtual + 0x10);
+     auto& main = *HpetMainCounter();
+     auto& t0 = *reinterpret_cast<volatile std::uint64_t*>(g_HpetBaseVirtual + 0x100);
+     auto& c0 = *reinterpret_cast<volatile std::uint64_t*>(g_HpetBaseVirtual + 0x108);
 
-     HpetGenConfig &= ~(1ULL << 0);
+     cfg &= ~(1ULL << 0);
+     main = 0;
 
-     HpetMainCounter = 0;
+     g_HpetFemtosecondsPerTick = (cap >> 32) & 0xFFFFFFFFULL;
 
-     HpetTimerConfig |= (1ULL << 2);
-     HpetTimerConfig &= ~(1ULL << 3);
-     HpetTimerConfig |= (1ULL << 1);
-     HpetTimerConfig |= (32ULL << 9);
+     const std::uint64_t ticks_1ms = 1'000'000ULL * 1'000ULL / g_HpetFemtosecondsPerTick;
 
-     g_HpetFemtosecondsPerTick = (HpetGenCapabilities >> 32) & 0xFFFFFFFF;
+     const std::uint64_t now = main;
+     c0 = now + ticks_1ms;
 
-     double hpetFrequencyHz = 1e15 / static_cast<double>(g_HpetFemtosecondsPerTick);
-     std::uint64_t tickInterval = static_cast<std::uint64_t>(hpetFrequencyHz / 1000.0);
-     HpetTimerComparator = tickInterval;
+     t0 |= (1ULL << 2);
+     t0 &= ~(1ULL << 3);
+     t0 |= (1ULL << 1);
+     t0 |= (32ULL << 9);
 
-     HpetGenConfig |= (1ULL << 0);
-     debugging::DbgWrite(u8"HPET at {}Hz\r\n", KiGetHPETRawFrequency());
+     cfg |= (1ULL << 0);
 }
-static std::uint64_t approximation = 0;
-
 std::uint64_t KiGetLAPICEstimation()
 {
-     if (approximation != 0) return approximation;
+     g_lapic[0x320 / 4] = cpu::TimerIrqVector;
 
-     volatile std::uint32_t* lapicBase = reinterpret_cast<volatile std::uint32_t*>(
-         static_cast<std::uintptr_t>(g_madt->localApicAddress) + 0xffff'8000'0000'0000);
+     constexpr std::uint32_t divider = 0b0011; // /16
+     g_lapic[0x3E0 / 4] = divider;
 
-     std::uint32_t TimerVector = cpu::TimerIrqVector;
+     constexpr std::uint32_t fullRange = 0xFFFFFFFF;
 
-     auto measure = [&](std::uint32_t initialCount, std::size_t targetTicks) -> double
+     auto measure = [&](std::uint32_t loadCount, std::uint32_t spinIters) -> double
      {
-          lapicBase[0x320 / 4] = TimerVector | (1 << 17);
-          lapicBase[0x380 / 4] = initialCount;
+          g_lapic[0x380 / 4] = loadCount;
 
-          lapicTicks.store(0);
-          operations::EnableInterrupts();
-          while (lapicTicks.load(std::memory_order::relaxed) < targetTicks) operations::Yield();
-          return static_cast<double>(KiReadHPET()) / static_cast<double>(lapicTicks.load(std::memory_order::relaxed));
+          const auto startHPET = KiReadHPET();
+          const std::uint32_t startCount = g_lapic[0x390 / 4];
+
+          for (std::uint32_t i = 0; i < spinIters; ++i) operations::Yield();
+
+          const auto endHPET = KiReadHPET();
+          const std::uint32_t endCount = g_lapic[0x390 / 4];
+
+          const std::uint32_t deltaTicks = startCount - endCount;
+
+          const double seconds = double(endHPET - startHPET) / double(KiGetHPETRawFrequency());
+
+          return double(deltaTicks) / seconds;
      };
 
-     double freq1 = measure(0xFFFF, 50);
+     const double freq1 = measure(fullRange, 300000);
+     debugging::DbgWrite(u8"Pass1: {} Hz\r\n", static_cast<std::uint64_t>(freq1));
 
-     std::uint32_t initialCount2 = static_cast<std::uint32_t>(0xFFFF / (freq1 / 1'000'000));
-     double freq2 = measure(initialCount2, 50);
+     const std::uint32_t refinedLoad =
+         std::clamp<std::uint32_t>(static_cast<std::uint32_t>(freq1 / 200.0), // scaled for /16 divider
+                                   0x10000, 0xFFFFFFFF);
 
-     std::uint32_t initialCount3 = static_cast<std::uint32_t>(initialCount2 / (freq2 / freq1));
-     double freq3 = measure(initialCount3, 50);
+     const double freq2 = measure(refinedLoad, 100000);
+     debugging::DbgWrite(u8"Pass2: {} Hz\r\n", static_cast<std::uint64_t>(freq2));
 
-     approximation = static_cast<std::uint64_t>(freq3);
+     const std::uint32_t fineLoad =
+         std::clamp<std::uint32_t>(static_cast<std::uint32_t>(freq2 / 80.0), 0x1000, refinedLoad);
 
-     debugging::DbgWrite(u8"Approx LAPIC frequency = {}\r\n", approximation);
-     lapicTicks.store(0);
-     volatile auto* hpetBase = reinterpret_cast<volatile std::uint64_t*>(HpetBasePhysical + 0xffff'8000'0000'0000);
-     *hpetBase = 0;
-     return approximation;
+     const double freq3 = measure(fineLoad, 30000);
+     debugging::DbgWrite(u8"Pass3: {} Hz\r\n", static_cast<std::uint64_t>(freq3));
+
+     const std::uint64_t finalHz = static_cast<std::uint64_t>((freq1 + freq2 + freq3) / 3.0);
+
+     debugging::DbgWrite(u8"Approx LAPIC frequency = {}\r\n", finalHz);
+
+     return finalHz;
 }
 
-void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
+static std::atomic<std::uint32_t> g_lapicFrequency{};
+static void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
 {
      RSDPDescriptor* lpRsp = reinterpret_cast<RSDPDescriptor*>(acpiPhysical + 0xffff'8000'0000'0000);
      MADT* lpMadt = nullptr;
@@ -526,13 +561,12 @@ void KiInitialiseLAPICTimer(std::uintptr_t acpiPhysical)
 
      g_lapic = lapicBase;
 
-     approximation = 0;
-     const auto initialCount = KiGetLAPICEstimation() / 1000;
+     const auto approximation = KiGetLAPICEstimation();
+     g_lapicFrequency.store(approximation, std::memory_order::relaxed);
 
      lapicBase[0xF0 / 4] = 0x1FF;
      lapicBase[0xB0 / 4] = 0;
 }
-static std::atomic<std::uint32_t> g_lapicFrequency{};
 
 static inline void IoApicWrite(std::uint32_t reg, std::uint32_t value)
 {
@@ -557,14 +591,11 @@ static void IoApicRouteIrq(std::uint32_t irq, std::uint8_t vector)
 
 void KeSetTimerFrequency(std::uint32_t frequency)
 {
-     g_lapicFrequency.store(frequency, std::memory_order::relaxed);
+     const auto initialCount = g_lapicFrequency / frequency;
 
-     volatile std::uint64_t* lapicBase = reinterpret_cast<volatile std::uint64_t*>(
-         static_cast<std::uintptr_t>(g_madt->localApicAddress) + 0xffff'8000'0000'0000);
+     g_lapic[0x320 / 4] = cpu::TimerIrqVector | (1 << 17);
+     g_lapic[0x380 / 4] = initialCount;
 
-     const auto initialCount = KiGetLAPICEstimation() / frequency;
-     lapicBase[0x320 / 4] = cpu::TimerIrqVector | (1 << 17);
-     lapicBase[0x380 / 4] = initialCount;
      lapicTicks.store((KeReadHighResolutionTimer() * frequency) / KeReadHighResolutionTimerFrequency(),
                       std::memory_order::relaxed);
 }
@@ -574,11 +605,29 @@ std::uint64_t KeReadLowResolutionTimerFrequency() { return g_lapicFrequency.load
 std::uint64_t KeReadHighResolutionTimerFrequency() { return KiGetHPETFrequency(); }
 std::uint64_t KeCurrentSystemTime()
 {
-     return (KeReadHighResolutionTimer() / (KeReadHighResolutionTimerFrequency() / 1000uz)) +
-            (cpu::g_systemBootTimeOffsetSeconds * 1000uz);
+     return static_cast<std::uint64_t>(KeReadHighResolutionTimerMS()) + (cpu::g_systemBootTimeOffsetSeconds * 1000uz);
 }
 
-void KiInitialiseInterrupts(std::uintptr_t acpiPhysical) { KiInitialiseLAPICTimer(acpiPhysical); }
+bool KiInitialiseInterrupts(std::uintptr_t acpiPhysical)
+{
+     KiInitialiseLAPICTimer(acpiPhysical);
+     const auto lapic = __readmsr(0x1b) & 0xFFFF'FFFF'FFFF'F000;
+     memory::paging::MapPage(memory::paging::GetCurrentPageTable(),
+                             memory::PageMapping{.virtualAddress = lapic + 0xffff'8000'0000'0000,
+                                                 .physicalAddress = lapic,
+                                                 .writable = true,
+                                                 .cacheDisable = true,
+                                                 .executable = false},
+                             [](std::size_t) -> void*
+                             {
+                                  std::uintptr_t page =
+                                      memory::physicalAllocator.AllocatePage(memory::PFNUse::PageTable);
+                                  if (page == ~0uz) return nullptr;
+                                  return reinterpret_cast<void*>(page + memory::virtualOffset);
+                             });
+
+     return true;
+}
 
 void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler,
                                 void* argument)
@@ -839,20 +888,19 @@ static inline void ArmDisablePhysicalTimer()
 #endif
 }
 
-static void GicRouteIrq(std::uint32_t irq, std::uint8_t vector)
+static cpu::IRQL g_intidToIrql[1020]{};
+
+static void GicRouteIrq(std::uint32_t irq, std::uint8_t vector, cpu::IRQL irql)
 {
      constexpr std::uintptr_t HhdmOffset = 0xffff'8000'0000'0000ULL;
 
-     const std::uintptr_t regEnable = g_gicdPhysBase + HhdmOffset + 0x100 + (irq / 32) * 4;
-     const std::uintptr_t regTarget = g_gicdPhysBase + HhdmOffset + 0x800 + irq;
+     if (irq < 1020) g_intidToIrql[irq] = irql;
 
+     const std::uintptr_t regEnable = g_gicdPhysBase + HhdmOffset + 0x100 + static_cast<std::uintptr_t>((irq / 32) * 4);
      *reinterpret_cast<volatile std::uint32_t*>(regEnable) |= (1u << (irq % 32));
 
-     // TODO: meow
-     *reinterpret_cast<volatile std::uint32_t*>(regTarget) = 1 << 0;
-
-     const std::uintptr_t regPrio = g_gicdPhysBase + HhdmOffset + 0x400 + irq;
-     *reinterpret_cast<volatile std::uint8_t*>(regPrio) = vector;
+     const std::uintptr_t regTarget = g_gicdPhysBase + HhdmOffset + 0x800 + irq;
+     *reinterpret_cast<volatile std::uint8_t*>(regTarget) = 1 << 0;
 }
 
 void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVector vector, InterruptHandler handler,
@@ -862,7 +910,8 @@ void KeRegisterInterruptHandler(cpu::InterruptVector physical, cpu::InterruptVec
 
      g_interruptHandlers[vector].Add(handler, argument);
 
-     GicRouteIrq(physical, vector);
+     const cpu::IRQL irql = cpu::KeVectorToIrql(static_cast<std::uint8_t>(vector));
+     GicRouteIrq(physical, static_cast<std::uint8_t>(vector), irql);
 }
 
 static inline void ArmEnablePhysicalTimer()
@@ -890,22 +939,20 @@ extern "C" InterruptFrame* KeHandleInterruptFrame(InterruptFrame* frame)
      {
           const std::uint32_t iar = GicReadIAR1();
 
-          if (iar != static_cast<std::uint32_t>(cpu::TimerIrqVector))
+          if (iar == 1023u)
+          {
+               operations::EnableInterrupts();
+               return frame;
+          }
 
-               if (iar == 1023u)
-               {
-                    debugging::DbgWrite(u8"[GIC] Spurious IRQ\r\n");
-                    operations::EnableInterrupts();
-                    return frame;
-               }
+          const cpu::IRQL irql = (iar < 1020) ? g_intidToIrql[iar] : cpu::IRQL::DeviceNormal;
+          const auto oldIrql = KeRaiseIrql(irql);
+          Defer defer{[oldIrql]() { KeLowerIrql(oldIrql); }};
 
           if (iar == static_cast<std::uint32_t>(cpu::TimerIrqVector))
           {
-               static std::atomic<std::uint64_t> lastPct{0};
-               std::uint64_t now = ArmReadCNTPCT();
-               std::uint64_t last = lastPct.exchange(now);
-
                const std::uint64_t interval = ReadCNTFRQ() / g_armFrequency.load(std::memory_order::relaxed);
+               const std::uint64_t now = ArmReadCNTPCT();
                std::uint64_t next = g_nextTimerDeadline.load(std::memory_order::relaxed);
                while (next <= now) next += interval;
                g_nextTimerDeadline.store(next, std::memory_order::relaxed);
@@ -919,7 +966,6 @@ extern "C" InterruptFrame* KeHandleInterruptFrame(InterruptFrame* frame)
                frame->far = 0;
                ARM64InterruptFrame vFrame{frame};
                HandleInterrupt(vFrame);
-
                operations::EnableInterrupts();
                return vFrame.frame;
           }
@@ -1239,10 +1285,18 @@ static void KiInitialiseGICv3()
      gicrSgi[0x100 / 4] = (1u << 30);
      ArmDSBISB();
 
-     volatile std::uint8_t* priBase =
-         reinterpret_cast<volatile std::uint8_t*>(g_gicrPhysBase + HhdmOffset + 0x10000 + 0x400);
-     priBase[30] = 0x80;
+     volatile std::uint32_t* gicr_ipriorityr =
+         reinterpret_cast<volatile std::uint32_t*>(g_gicrPhysBase + HhdmOffset + 0x10000 + 0x400);
+
+     const std::uint8_t clockPrio = static_cast<std::uint8_t>(KeIrqlToApicClass(cpu::IRQL::Clock) << 4); // 0xD0
+
+     std::uint32_t prioWord = gicr_ipriorityr[7];
+     prioWord &= ~(0xFFu << 16); // byte lane 2 = INTID 30
+     prioWord |= (static_cast<std::uint32_t>(clockPrio) << 16);
+     gicr_ipriorityr[7] = prioWord;
      ArmDSBISB();
+
+     if (cpu::TimerIrqVector < 1020) g_intidToIrql[cpu::TimerIrqVector] = cpu::IRQL::Clock;
 
      std::uint32_t icfgr1 = gicrSgi[0xC04 / 4];
      icfgr1 &= ~(0b11u << ((30 - 16) * 2));
@@ -1322,7 +1376,7 @@ void KeSetTimerFrequency(std::uint32_t frequency)
 #endif
 }
 
-void KiInitialiseInterrupts(std::uintptr_t acpiPhysical)
+bool KiInitialiseInterrupts(std::uintptr_t acpiPhysical)
 {
      g_armFrequency.store(100);
      g_nextTimerDeadline.store(0);
@@ -1453,12 +1507,13 @@ void KiInitialiseInterrupts(std::uintptr_t acpiPhysical)
      if (lpMadt == nullptr)
      {
           debugging::DbgWrite(u8"[KiInitialiseInterrupts] MADT not found!\r\n");
-          return;
+          return false;
      }
 
      KiParseMADTForGIC(lpMadt);
      KiInitialiseGICv3();
-     KeSetTimerFrequency(64);
+
+     return true;
 }
 
 std::uint64_t KeCurrentSystemTime()
@@ -1519,4 +1574,77 @@ void HandleInterrupt(cpu::IInterruptFrame& frame)
      dbg::KeBugCheck(frame);
      operations::DisableInterrupts();
      while (true) operations::Halt();
+}
+
+cpu::IRQL KiSetXIrqlPhysical(process::CpuLocal& cpu, cpu::IRQL to)
+{
+     const auto old = cpu.irql.exchange(to, std::memory_order::acq_rel);
+
+#ifdef ARCH_X8664
+     auto* apicTpr = reinterpret_cast<volatile std::uint32_t*>(reinterpret_cast<std::uintptr_t>(g_lapic) + 0x80);
+     *apicTpr = (KeIrqlToApicClass(to) << 4) & 0xFF;
+#ifdef COMPILER_MSVC
+     __mfence();
+#elifdef COMPILER_CLANG
+     asm volatile("mfence" ::: "memory");
+#endif
+#elifdef ARCH_ARM64
+     const std::uint8_t cls = KeIrqlToApicClass(to);
+     const std::uint64_t pmr = (cls == 0) ? 0xFFULL : static_cast<std::uint64_t>(cls << 4);
+#ifdef COMPILER_MSVC
+     _WriteStatusReg(ARM64_SYSREG(3, 0, 4, 6, 0), pmr);
+     __isb(0xF);
+#elifdef COMPILER_CLANG
+     asm volatile("msr icc_pmr_el1, %x0\nisb" : : "r"(pmr) : "memory");
+#endif
+#endif
+     return old;
+}
+void KiSetIrqlPhysical(process::CpuLocal& cpu, cpu::IRQL to)
+{
+     cpu.irql.store(to, std::memory_order::release);
+
+#ifdef ARCH_X8664
+     auto* apicTpr = reinterpret_cast<volatile std::uint32_t*>(reinterpret_cast<std::uintptr_t>(g_lapic) + 0x80);
+     *apicTpr = (KeIrqlToApicClass(to) << 4) & 0xFF;
+#ifdef COMPILER_MSVC
+     __mfence();
+#elifdef COMPILER_CLANG
+     asm volatile("mfence" ::: "memory");
+#endif
+#elifdef ARCH_ARM64
+     const std::uint8_t cls = KeIrqlToApicClass(to);
+     const std::uint64_t pmr = (cls == 0) ? 0xFFULL : static_cast<std::uint64_t>(cls << 4);
+#ifdef COMPILER_MSVC
+     _WriteStatusReg(ARM64_SYSREG(3, 0, 4, 6, 0), pmr);
+     __isb(0xF);
+#elifdef COMPILER_CLANG
+     asm volatile("msr icc_pmr_el1, %x0\nisb" : : "r"(pmr) : "memory");
+#endif
+#endif
+}
+
+cpu::IRQL KeRaiseIrql(cpu::IRQL newIrql)
+{
+     auto* cpu = process::KeCurrentCpu();
+     if (cpu == nullptr) return cpu::IRQL::Passive;
+
+     return KiSetXIrqlPhysical(*cpu, newIrql);
+}
+void KeLowerIrql(cpu::IRQL newIrql)
+{
+     auto* cpu = process::KeCurrentCpu();
+     if (cpu == nullptr) return;
+
+     cpu::IRQL from = cpu->irql.load(std::memory_order::acquire);
+
+     if (from > cpu::IRQL::Dispatch && newIrql <= cpu::IRQL::Dispatch)
+     {
+          KiSetIrqlPhysical(*cpu, cpu::IRQL::Dispatch);
+
+          // TODO: call KeDispatchDPCs();
+          from = cpu::IRQL::Dispatch;
+     }
+
+     KiSetIrqlPhysical(*cpu, newIrql);
 }

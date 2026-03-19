@@ -18,7 +18,7 @@ namespace process
           std::uintptr_t userRSP;
           Thread* idleThread;
           bool isSleeping{};
-          cpu::IRQL irql{};
+          std::atomic<cpu::IRQL> irql{};
           std::uint64_t lastTSC{};
           std::atomic<bool> selectionLock{};
           std::atomic<bool> canReschedule{};
